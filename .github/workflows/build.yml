@@ -1,19 +1,62 @@
-name: Build Test
-on: push
+name: Build ZMK Firmware
+
+on: [push, pull_request, workflow_dispatch]
+
 jobs:
-  test-build:
+  build:
     runs-on: ubuntu-latest
-    container: zmkfirmware/zmk-build-arm:stable
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+      options: --user root
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    - run: mkdir -p config/boards/shields/k30
-    - run: echo '/* minimal keymap */' > config/boards/shields/k30/k30.keymap
-    - run: echo '#include <behaviors.dtsi>' >> config/boards/shields/k30/k30.keymap
-    - run: echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap
-    - run: echo '/ { keymap { compatible = "zmk,keymap"; default_layer { bindings = < &kp A &kp B >; }; }; };' >> config/boards/shields/k30/k30.keymap
-    - run: west init -l config
-    - run: west update
-    - run: west zephyr-export
-    - run: west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fix overlay file
+        run: |
+          echo "=== Fixing k30.overlay ==="
+          OVERLAY_FILE="config/boards/shields/k30/k30.overlay"
+          
+          if [ -f "$OVERLAY_FILE" ]; then
+            # 备份原始文件
+            cp "$OVERLAY_FILE" "${OVERLAY_FILE}.backup"
+            
+            # 修复 overlay 文件 - 添加 label 属性
+            sed -i '/compatible = "zmk,kscan-gpio-matrix";/a\\t\tlabel = "KSCAN";' "$OVERLAY_FILE"
+            
+            echo "Overlay file fixed"
+            echo "=== Fixed overlay content ==="
+            cat "$OVERLAY_FILE"
+          else
+            echo "ERROR: k30.overlay not found!"
+            exit 1
+          fi
+
+      - name: Create minimal keymap
+        run: |
+          mkdir -p config/boards/shields/k30
+          echo '/* minimal keymap */' > config/boards/shields/k30/k30.keymap
+          echo '#include <behaviors.dtsi>' >> config/boards/shields/k30/k30.keymap
+          echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap
+          echo '/ { keymap { compatible = "zmk,keymap"; default_layer { bindings = < &kp A &kp B >; }; }; };' >> config/boards/shields/k30/k30.keymap
+
+      - name: Initialize ZMK
+        run: |
+          west init -l config
+          west update
+          west zephyr-export
+
+      - name: Build firmware
+        run: |
+          west build -b nrfmicro_13 -s zmk/app -- \
+            -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
+            -DSHIELD=k30
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: k30-firmware
+          path: build/zephyr/zmk.uf2
