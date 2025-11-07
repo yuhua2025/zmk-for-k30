@@ -1,6 +1,11 @@
-name: Build ZMK Firmware
+name: Build K30 Keyboard
 
-on: [push, pull_request, workflow_dispatch]
+on: 
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build:
@@ -9,54 +14,112 @@ jobs:
       image: zmkfirmware/zmk-build-arm:stable
       options: --user root
 
+    strategy:
+      matrix:
+        include:
+          - board: nrfmicro_13
+            shield: k30
+      fail-fast: false
+
+    name: Build K30 Keyboard
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Fix overlay file
+      - name: Debug file structure
         run: |
-          echo "=== Fixing k30.overlay ==="
-          OVERLAY_FILE="config/boards/shields/k30/k30.overlay"
-          
-          if [ -f "$OVERLAY_FILE" ]; then
-            # 备份原始文件
-            cp "$OVERLAY_FILE" "${OVERLAY_FILE}.backup"
-            
-            # 修复 overlay 文件 - 添加 label 属性
-            sed -i '/compatible = "zmk,kscan-gpio-matrix";/a\\t\tlabel = "KSCAN";' "$OVERLAY_FILE"
-            
-            echo "Overlay file fixed"
-            echo "=== Fixed overlay content ==="
-            cat "$OVERLAY_FILE"
-          else
-            echo "ERROR: k30.overlay not found!"
-            exit 1
-          fi
+          echo "=== Repository Structure ==="
+          ls -la
+          echo "=== K30 Shield Files ==="
+          find config/boards/shields/k30 -type f 2>/dev/null | head -20 || echo "No k30 shield directory found"
 
-      - name: Create minimal keymap
+      - name: Initialize ZMK environment
         run: |
-          mkdir -p config/boards/shields/k30
-          echo '/* minimal keymap */' > config/boards/shields/k30/k30.keymap
-          echo '#include <behaviors.dtsi>' >> config/boards/shields/k30/k30.keymap
-          echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap
-          echo '/ { keymap { compatible = "zmk,keymap"; default_layer { bindings = < &kp A &kp B >; }; }; };' >> config/boards/shields/k30/k30.keymap
-
-      - name: Initialize ZMK
-        run: |
+          echo "=== Initializing ZMK ==="
           west init -l config
           west update
           west zephyr-export
 
-      - name: Build firmware
+      - name: Build K30 firmware
         run: |
-          west build -b nrfmicro_13 -s zmk/app -- \
+          echo "=== Building K30 Firmware ==="
+          echo "Board: ${{ matrix.board }}"
+          echo "Shield: ${{ matrix.shield }}"
+          
+          # 清理之前的构建
+          rm -rf build
+          
+          # 构建固件
+          west build -b ${{ matrix.board }} -s zmk/app -- \
             -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
-            -DSHIELD=k30
+            -DSHIELD=${{ matrix.shield }}
 
-      - name: Upload firmware
+      - name: Verify build output
+        run: |
+          echo "=== Verifying Build Output ==="
+          if [ -f "build/zephyr/zmk.uf2" ]; then
+            echo "✅ UF2 firmware generated successfully"
+            ls -lh build/zephyr/zmk.uf2
+          elif [ -f "build/zephyr/zmk.hex" ]; then
+            echo "✅ HEX firmware generated successfully"
+            ls -lh build/zephyr/zmk.hex
+          elif [ -f "build/zephyr/zephyr.bin" ]; then
+            echo "✅ BIN firmware generated successfully"
+            ls -lh build/zephyr/zephyr.bin
+          else
+            echo "❌ No firmware files found!"
+            echo "Build directory contents:"
+            find build/ -type f -name "*.uf2" -o -name "*.hex" -o -name "*.bin" | head -10
+            exit 1
+          fi
+
+      - name: Prepare artifacts
+        run: |
+          echo "=== Preparing Artifacts ==="
+          mkdir -p artifacts
+          
+          # 复制所有可能的固件文件
+          if [ -f "build/zephyr/zmk.uf2" ]; then
+            cp build/zephyr/zmk.uf2 "artifacts/k30-nrfmicro_13.uf2"
+          fi
+          if [ -f "build/zephyr/zmk.hex" ]; then
+            cp build/zephyr/zmk.hex "artifacts/k30-nrfmicro_13.hex"
+          fi
+          if [ -f "build/zephyr/zephyr.bin" ]; then
+            cp build/zephyr/zephyr.bin "artifacts/k30-nrfmicro_13.bin"
+          fi
+          
+          echo "Artifacts created:"
+          ls -la artifacts/
+
+      - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: k30-firmware
-          path: build/zephyr/zmk.uf2
+          name: k30-keyboard-firmware
+          path: artifacts/*
+          retention-days: 30
+
+      - name: Create release summary
+        if: success()
+        run: |
+          echo "## K30 Keyboard Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Build Successful!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Board:** nrfmicro_13" >> $GITHUB_STEP_SUMMARY
+          echo "**Shield:** k30" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Generated Files:" >> $GITHUB_STEP_SUMMARY
+          if [ -f "artifacts/k30-nrfmicro_13.uf2" ]; then
+            echo "- `k30-nrfmicro_13.uf2` (UF2 format)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f "artifacts/k30-nrfmicro_13.hex" ]; then
+            echo "- `k30-nrfmicro_13.hex` (HEX format)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f "artifacts/k30-nrfmicro_13.bin" ]; then
+            echo "- `k30-nrfmicro_13.bin` (BIN format)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the firmware from the Artifacts section." >> $GITHUB_STEP_SUMMARY
