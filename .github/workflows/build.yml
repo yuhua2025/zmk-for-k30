@@ -1,126 +1,22 @@
 name: Build K30 Keyboard
-
-on: 
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
+on: push
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: zmkfirmware/zmk-build-arm:stable
-      options: --user root
-
-    strategy:
-      matrix:
-        include:
-          - board: nrfmicro_13
-            shield: k30
-      fail-fast: false
-
-    name: Build K30 Keyboard
-
+    container: zmkfirmware/zmk-build-arm:stable
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Debug keymap file
-        run: |
-          echo "=== Checking k30.keymap ==="
-          KEYMAP_FILE="config/boards/shields/k30/k30.keymap"
-          if [ -f "$KEYMAP_FILE" ]; then
-            echo "Keymap file exists"
-            echo "Lines 40-50:"
-            sed -n '40,50p' "$KEYMAP_FILE"
-            echo "Total lines: $(wc -l < "$KEYMAP_FILE")"
-          else
-            echo "Keymap file not found!"
-            exit 1
-          fi
-
-      - name: Fix keymap syntax errors
-        run: |
-          echo "=== Fixing keymap syntax ==="
-          KEYMAP_FILE="config/boards/shields/k30/k30.keymap"
-          cp "$KEYMAP_FILE" "${KEYMAP_FILE}.backup"
-          
-          # 逐个修复键码，避免复杂的sed命令
-          sed -i 's/&kp NUM_LOCK/&kp NLCK/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N1/&kp KP_N1/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N2/&kp KP_N2/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N3/&kp KP_N3/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N4/&kp KP_N4/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N5/&kp KP_N5/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N6/&kp KP_N6/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N7/&kp KP_N7/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N8/&kp KP_N8/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N9/&kp KP_N9/g' "$KEYMAP_FILE"
-          sed -i 's/&kp N0/&kp KP_N0/g' "$KEYMAP_FILE"
-          
-          echo "Keymap file fixed"
-
-      - name: Create minimal keymap
-        run: |
-          echo "=== Creating minimal keymap ==="
-          mkdir -p config/boards/shields/k30
-          echo '#include <behaviors.dtsi>' > config/boards/shields/k30/k30.keymap.minimal
-          echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '/' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '  keymap {' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '    compatible = "zmk,keymap";' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '    default_layer {' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '      bindings = < &kp A &kp B &kp C >;' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '    };' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '  };' >> config/boards/shields/k30/k30.keymap.minimal
-          echo '};' >> config/boards/shields/k30/k30.keymap.minimal
-
-      - name: Initialize ZMK environment
-        run: |
-          echo "=== Initializing ZMK ==="
-          west init -l config
-          west update
-          west zephyr-export
-
-      - name: Build K30 firmware
-        run: |
-          echo "=== Building K30 Firmware ==="
-          echo "Board: nrfmicro_13"
-          echo "Shield: k30"
-          rm -rf build
-          west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
-
-      - name: Verify build output
-        run: |
-          echo "=== Verifying Build Output ==="
-          if [ -f "build/zephyr/zmk.uf2" ]; then
-            echo "UF2 firmware generated successfully"
-            ls -lh build/zephyr/zmk.uf2
-          elif [ -f "build/zephyr/zmk.hex" ]; then
-            echo "HEX firmware generated successfully"
-            ls -lh build/zephyr/zmk.hex
-          else
-            echo "No firmware files found!"
-            exit 1
-          fi
-
-      - name: Prepare artifacts
-        run: |
-          echo "=== Preparing Artifacts ==="
-          mkdir -p artifacts
-          if [ -f "build/zephyr/zmk.uf2" ]; then
-            cp build/zephyr/zmk.uf2 artifacts/k30-nrfmicro_13.uf2
-          fi
-          if [ -f "build/zephyr/zmk.hex" ]; then
-            cp build/zephyr/zmk.hex artifacts/k30-nrfmicro_13.hex
-          fi
-
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: k30-keyboard-firmware
-          path: artifacts/*
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - run: mkdir -p config/boards/shields/k30
+    - run: echo '#include <behaviors.dtsi>' > config/boards/shields/k30/k30.keymap
+    - run: echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap
+    - run: echo '/ { keymap { compatible = "zmk,keymap"; default_layer { bindings = < &kp A &kp B >; }; }; };' >> config/boards/shields/k30/k30.keymap
+    - run: west init -l config
+    - run: west update
+    - run: west zephyr-export
+    - run: west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
+    - uses: actions/upload-artifact@v4
+      with:
+        name: k30-firmware
+        path: build/zephyr/zmk.uf2
