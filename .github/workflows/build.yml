@@ -17,109 +17,38 @@ jobs:
       fail-fast: false
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
           
-      - name: Fix keymap syntax
+      - name: Complete ZMK setup
         run: |
-          echo "=== Fixing keymap file ==="
-          if [ -f "config/boards/shields/k30/k30.keymap" ]; then
-            # 备份原始文件
-            cp config/boards/shields/k30/k30.keymap config/boards/shields/k30/k30.keymap.backup
-            
-            # 修复键码名称
-            sed -i '
-              s/&kp NUM_LOCK/&kp NLCK/g;
-              s/&kp FSLH/&kp KP_SLASH/g;
-              s/&kp STAR/&kp KP_ASTERISK/g;
-              s/&kp MINUS/&kp KP_MINUS/g;
-            ' config/boards/shields/k30/k30.keymap
-            
-            echo "Keymap syntax fixed"
-          else
-            echo "WARNING: k30.keymap not found, creating a simple one"
-            mkdir -p config/boards/shields/k30
-            cat > config/boards/shields/k30/k30.keymap << 'EOF'
-#include <behaviors.dtsi>
-#include <dt-bindings/zmk/keys.h>
-
-/ {
-    keymap {
-        compatible = "zmk,keymap";
-        default_layer {
-            bindings = <
-                &kp A &kp B
-            >;
-        };
-    };
-};
-EOF
-          fi
-
-      - name: Initialize ZMK workspace
-        run: |
-          echo "=== Initializing ZMK ==="
+          # 完整的 ZMK 初始化流程
           west init -l config
           west update
-          
-      - name: Export Zephyr environment
-        run: |
-          echo "=== Setting up Zephyr environment ==="
           west zephyr-export
           
-      - name: Verify Zephyr setup
-        run: |
-          echo "=== Verifying Zephyr ==="
-          if [ -n "$ZEPHYR_BASE" ]; then
-            echo "ZEPHYR_BASE: $ZEPHYR_BASE"
-          else
-            echo "ZEPHYR_BASE not set, but continuing..."
+          # 验证环境
+          echo "ZEPHYR_BASE: $ZEPHYR_BASE"
+          echo "Workspace: $GITHUB_WORKSPACE"
+          
+          # 手动设置 Zephyr 基础路径（如果环境变量未正确设置）
+          if [ -z "$ZEPHYR_BASE" ]; then
+            export ZEPHYR_BASE="$GITHUB_WORKSPACE/zephyr"
           fi
           
-          # 检查 Zephyr 配置文件是否存在
-          if [ -f "zephyr/share/zephyr-package/cmake/ZephyrConfig.cmake" ]; then
-            echo "✓ ZephyrConfig.cmake found"
-          else
-            echo "✗ ZephyrConfig.cmake not found"
-            find . -name "ZephyrConfig.cmake" | head -5
-          fi
+          # 检查关键文件
+          ls -la zmk/app/CMakeLists.txt || echo "ZMK app CMakeLists.txt not found"
+          ls -la zephyr/ || echo "Zephyr directory not found"
 
-      - name: Build firmware
+      - name: Build
         run: |
-          echo "=== Building firmware ==="
-          echo "Board: ${{ matrix.board }}"
-          echo "Shield: ${{ matrix.shield }}"
-          
-          # 设置 Zephyr 基础路径（如果环境变量未设置）
-          export ZEPHYR_BASE="$GITHUB_WORKSPACE/zephyr"
-          
-          # 构建命令
-          west build -b ${{ matrix.board }} -s zmk/app -- \
+          cd zmk/app
+          west build -b ${{ matrix.board }} -- \
             -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
             -DSHIELD=${{ matrix.shield }}
 
-      - name: Check build output
-        run: |
-          echo "=== Build results ==="
-          if [ -f "build/zephyr/zmk.uf2" ]; then
-            echo "✓ Build successful - UF2 file found"
-            ls -lh build/zephyr/zmk.uf2
-          elif [ -f "build/zephyr/zmk.hex" ]; then
-            echo "✓ Build successful - HEX file found"
-            ls -lh build/zephyr/zmk.hex
-          else
-            echo "✗ Build failed - no firmware files"
-            echo "Build directory contents:"
-            find build/ -type f | head -20
-            exit 1
-          fi
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.shield }}-${{ matrix.board }}
-          path: |
-            build/zephyr/zmk.uf2
-            build/zephyr/zmk.hex
+          name: firmware
+          path: build/zephyr/zmk.uf2
