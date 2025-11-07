@@ -47,56 +47,40 @@ jobs:
         run: |
           echo "=== Fixing keymap syntax ==="
           KEYMAP_FILE="config/boards/shields/k30/k30.keymap"
-          
-          # 备份原始文件
           cp "$KEYMAP_FILE" "${KEYMAP_FILE}.backup"
           
-          # 修复常见的键码问题
-          sed -i '
-            # 修复 NUM_LOCK 键码
-            s/&kp NUM_LOCK/&kp NLCK/g;
-            # 修复数字键码
-            s/&kp N1/&kp KP_N1/g;
-            s/&kp N2/&kp KP_N2/g;
-            s/&kp N3/&kp KP_N3/g;
-            s/&kp N4/&kp KP_N4/g;
-            s/&kp N5/&kp KP_N5/g;
-            s/&kp N6/&kp KP_N6/g;
-            s/&kp N7/&kp KP_N7/g;
-            s/&kp N8/&kp KP_N8/g;
-            s/&kp N9/&kp KP_N9/g;
-            s/&kp N0/&kp KP_N0/g;
-            # 修复其他可能的问题键码
-            s/&kp FSLH/&kp KP_SLASH/g;
-            s/&kp STAR/&kp KP_ASTERISK/g;
-            s/&kp MINUS/&kp KP_MINUS/g;
-          ' "$KEYMAP_FILE"
+          sed -i 's/&kp NUM_LOCK/&kp NLCK/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N1/&kp KP_N1/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N2/&kp KP_N2/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N3/&kp KP_N3/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N4/&kp KP_N4/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N5/&kp KP_N5/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N6/&kp KP_N6/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N7/&kp KP_N7/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N8/&kp KP_N8/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N9/&kp KP_N9/g' "$KEYMAP_FILE"
+          sed -i 's/&kp N0/&kp KP_N0/g' "$KEYMAP_FILE"
+          sed -i 's/&kp FSLH/&kp KP_SLASH/g' "$KEYMAP_FILE"
+          sed -i 's/&kp STAR/&kp KP_ASTERISK/g' "$KEYMAP_FILE"
+          sed -i 's/&kp MINUS/&kp KP_MINUS/g' "$KEYMAP_FILE"
           
           echo "Keymap file fixed"
 
-      - name: Create minimal keymap if needed
+      - name: Create minimal keymap
         run: |
-          echo "=== Creating minimal keymap as fallback ==="
-          KEYMAP_FILE="config/boards/shields/k30/k30.keymap"
-          
-          # 如果修复后文件有问题，创建一个极简版本
-          cat > "${KEYMAP_FILE}.minimal" << 'EOF'
+          echo "=== Creating minimal keymap ==="
+          cat > config/boards/shields/k30/k30.keymap.minimal << 'EOF'
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
-
 / {
     keymap {
         compatible = "zmk,keymap";
         default_layer {
-            bindings = <
-                &kp A &kp B &kp C
-            >;
+            bindings = < &kp A &kp B &kp C >;
         };
     };
 };
 EOF
-          
-          echo "Minimal keymap created as backup"
 
       - name: Initialize ZMK environment
         run: |
@@ -106,44 +90,27 @@ EOF
           west zephyr-export
 
       - name: Build K30 firmware
-        id: build
         run: |
           echo "=== Building K30 Firmware ==="
-          echo "Board: ${{ matrix.board }}"
-          echo "Shield: ${{ matrix.shield }}"
-          
-          # 清理之前的构建
+          echo "Board: nrfmicro_13"
+          echo "Shield: k30"
           rm -rf build
-          
-          # 尝试构建，如果失败使用最小keymap
-          set +e
-          west build -b ${{ matrix.board }} -s zmk/app -- \
-            -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
-            -DSHIELD=${{ matrix.shield }}
-          
-          if [ $? -ne 0 ]; then
-            echo "Build failed, trying with minimal keymap..."
-            cp "config/boards/shields/k30/k30.keymap.minimal" "config/boards/shields/k30/k30.keymap"
-            rm -rf build
-            west build -b ${{ matrix.board }} -s zmk/app -- \
-              -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
-              -DSHIELD=${{ matrix.shield }}
-          fi
+          west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
 
       - name: Verify build output
         run: |
           echo "=== Verifying Build Output ==="
           if [ -f "build/zephyr/zmk.uf2" ]; then
-            echo "✅ UF2 firmware generated successfully"
+            echo "UF2 firmware generated successfully"
             ls -lh build/zephyr/zmk.uf2
           elif [ -f "build/zephyr/zmk.hex" ]; then
-            echo "✅ HEX firmware generated successfully"
+            echo "HEX firmware generated successfully"
             ls -lh build/zephyr/zmk.hex
           elif [ -f "build/zephyr/zephyr.bin" ]; then
-            echo "✅ BIN firmware generated successfully"
+            echo "BIN firmware generated successfully"
             ls -lh build/zephyr/zephyr.bin
           else
-            echo "❌ No firmware files found!"
+            echo "No firmware files found!"
             echo "Build directory contents:"
             find build/ -type f | head -20
             exit 1
@@ -153,14 +120,12 @@ EOF
         run: |
           echo "=== Preparing Artifacts ==="
           mkdir -p artifacts
-          
           if [ -f "build/zephyr/zmk.uf2" ]; then
-            cp build/zephyr/zmk.uf2 "artifacts/k30-nrfmicro_13.uf2"
+            cp build/zephyr/zmk.uf2 artifacts/k30-nrfmicro_13.uf2
           fi
           if [ -f "build/zephyr/zmk.hex" ]; then
-            cp build/zephyr/zmk.hex "artifacts/k30-nrfmicro_13.hex"
+            cp build/zephyr/zmk.hex artifacts/k30-nrfmicro_13.hex
           fi
-          
           echo "Artifacts created:"
           ls -la artifacts/
 
