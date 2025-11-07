@@ -13,5 +13,5 @@
 #
 ---
 include:
-  - board: weekin840_m2
-    shield: weekin_roc
+  - board: nrfmicro_13
+    shield: k30
