@@ -1,30 +1,19 @@
-name: Build ZMK
-on: [push]
+name: Build Test
+on: push
 jobs:
-  build:
+  test-build:
     runs-on: ubuntu-latest
     container: zmkfirmware/zmk-build-arm:stable
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - run: west init -l config
-      - run: west update
-      - run: west zephyr-export
-      - run: mkdir -p config/boards/shields/k30
-      - run: echo '#include <behaviors.dtsi>' > config/boards/shields/k30/k30.keymap
-      - run: echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap
-      - run: echo '' >> config/boards/shields/k30/k30.keymap
-      - run: echo '/' >> config/boards/shields/k30/k30.keymap
-      - run: echo '  keymap {' >> config/boards/shields/k30/k30.keymap
-      - run: echo '    compatible = "zmk,keymap";' >> config/boards/shields/k30/k30.keymap
-      - run: echo '    default_layer {' >> config/boards/shields/k30/k30.keymap
-      - run: echo '      bindings = < &kp A &kp B >;' >> config/boards/shields/k30/k30.keymap
-      - run: echo '    };' >> config/boards/shields/k30/k30.keymap
-      - run: echo '  };' >> config/boards/shields/k30/k30.keymap
-      - run: echo '};' >> config/boards/shields/k30/k30.keymap
-      - run: west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: firmware
-          path: build/zephyr/zmk.uf2
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - run: mkdir -p config/boards/shields/k30
+    - run: echo '/* minimal keymap */' > config/boards/shields/k30/k30.keymap
+    - run: echo '#include <behaviors.dtsi>' >> config/boards/shields/k30/k30.keymap
+    - run: echo '#include <dt-bindings/zmk/keys.h>' >> config/boards/shields/k30/k30.keymap
+    - run: echo '/ { keymap { compatible = "zmk,keymap"; default_layer { bindings = < &kp A &kp B >; }; }; };' >> config/boards/shields/k30/k30.keymap
+    - run: west init -l config
+    - run: west update
+    - run: west zephyr-export
+    - run: west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
