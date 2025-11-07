@@ -1,128 +1,18 @@
-name: Build ZMK Firmware
-
-on: [push, pull_request, workflow_dispatch]
-
+name: Build
+on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
       image: zmkfirmware/zmk-build-arm:stable
-      options: --user root
-    
-    strategy:
-      matrix:
-        include:
-          - board: nrfmicro_13
-            shield: k30
-      fail-fast: false
-    
-    name: Build ${{ matrix.shield }} on ${{ matrix.board }}
-    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-          
-      - name: Debug environment
-        run: |
-          echo "=== Workspace Information ==="
-          echo "Workspace: $GITHUB_WORKSPACE"
-          echo "Current directory: $(pwd)"
-          ls -la
-          
-      - name: Fix keymap syntax issues
-        run: |
-          echo "=== Fixing keymap file syntax ==="
-          if [ -f "config/boards/shields/k30/k30.keymap" ]; then
-            # 备份原始文件
-            cp config/boards/shields/k30/k30.keymap config/boards/shields/k30/k30.keymap.backup
-            
-            # 修复键码名称
-            sed -i '
-              s/&kp NUM_LOCK/&kp NLCK/g;
-              s/&kp FSLH/&kp KP_SLASH/g;
-              s/&kp STAR/&kp KP_ASTERISK/g;
-              s/&kp MINUS/&kp KP_MINUS/g;
-            ' config/boards/shields/k30/k30.keymap
-            
-            echo "Keymap file fixed"
-            echo "Lines around 40-45:"
-            sed -n '40,46p' config/boards/shields/k30/k30.keymap
-          else
-            echo "ERROR: k30.keymap file not found!"
-            find config/ -name "*.keymap" | head -10
-          fi
-
-      - name: Initialize ZMK environment
-        run: |
-          echo "=== Initializing ZMK Build Environment ==="
-          west init -l config
-          west update
-          west zephyr-export
-          echo "Zephyr environment initialized"
-
-      - name: Verify Zephyr environment
-        run: |
-          echo "=== Verifying Zephyr Environment ==="
-          if [ -n "$ZEPHYR_BASE" ]; then
-            echo "✓ ZEPHYR_BASE is set to: $ZEPHYR_BASE"
-          else
-            echo "✗ ZEPHYR_BASE is not set!"
-            # 尝试手动设置
-            export ZEPHYR_BASE="$GITHUB_WORKSPACE/zephyr"
-            echo "Manually set ZEPHYR_BASE to: $ZEPHYR_BASE"
-          fi
-          
-          echo "=== Checking toolchain ==="
-          which arm-none-eabi-gcc && arm-none-eabi-gcc --version || echo "ARM GCC not found"
-
-      - name: Build firmware
-        run: |
-          echo "=== Building Firmware ==="
-          echo "Board: ${{ matrix.board }}"
-          echo "Shield: ${{ matrix.shield }}"
-          echo "ZMK Config: $GITHUB_WORKSPACE/config"
-          
-          # 清理之前的构建
-          rm -rf build
-          
-          # 构建固件
-          west build -b ${{ matrix.board }} -s zmk/app -- \
-            -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
-            -DSHIELD=${{ matrix.shield }}
-
-      - name: Check build results
-        run: |
-          echo "=== Checking Build Results ==="
-          if [ -f "build/zephyr/zmk.uf2" ]; then
-            echo "✓ UF2 firmware generated successfully"
-            ls -lh build/zephyr/zmk.uf2
-          elif [ -f "build/zephyr/zmk.hex" ]; then
-            echo "✓ HEX firmware generated successfully"  
-            ls -lh build/zephyr/zmk.hex
-          else
-            echo "✗ No firmware files found!"
-            echo "Build directory contents:"
-            find build/ -type f | head -20
-            exit 1
-          fi
-
-      - name: Prepare artifacts
-        run: |
-          echo "=== Preparing Artifacts ==="
-          mkdir -p artifacts
-          if [ -f "build/zephyr/zmk.uf2" ]; then
-            cp build/zephyr/zmk.uf2 "artifacts/${{ matrix.shield }}-${{ matrix.board }}.uf2"
-            echo "Created: artifacts/${{ matrix.shield }}-${{ matrix.board }}.uf2"
-          elif [ -f "build/zephyr/zmk.hex" ]; then
-            cp build/zephyr/zmk.hex "artifacts/${{ matrix.shield }}-${{ matrix.board }}.hex"
-            echo "Created: artifacts/${{ matrix.shield }}-${{ matrix.board }}.hex"
-          fi
-          ls -la artifacts/
-
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
+      - run: west init -l config
+      - run: west update
+      - run: west build -b nrfmicro_13 -s zmk/app -- -DZMK_CONFIG="$GITHUB_WORKSPACE/config" -DSHIELD=k30
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.shield }}-${{ matrix.board }}-firmware
-          path: artifacts/*
+          name: firmware
+          path: build/zephyr/zmk.uf2
