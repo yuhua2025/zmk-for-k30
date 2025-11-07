@@ -1,7 +1,24 @@
-- name: Use Minimal Keymap
-  run: |
-    echo "=== Using minimal keymap ==="
-    cat > config/boards/shields/k30/k30.keymap << 'EOF'
+name: Build ZMK Firmware
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+      options: --user root
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Create minimal keymap
+        run: |
+          mkdir -p config/boards/shields/k30
+          cat > config/boards/shields/k30/k30.keymap << 'EOF'
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 
@@ -16,3 +33,21 @@
     };
 };
 EOF
+
+      - name: Initialize ZMK
+        run: |
+          west init -l config
+          west update
+          west zephyr-export
+
+      - name: Build firmware
+        run: |
+          west build -b nrfmicro_13 -s zmk/app -- \
+            -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
+            -DSHIELD=k30
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: build/zephyr/zmk.uf2
