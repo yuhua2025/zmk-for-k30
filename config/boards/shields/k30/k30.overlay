@@ -8,21 +8,12 @@
 
 / {
 	chosen {
-		zmk,kscan = &kscan0;
-		zmk,matrix_transform = &default_transform;
-		zmk,leds = &leds;
-	};
+    zmk,kscan = &kscan0;
+    zmk,matrix_transform = &default_transform;
+    };
+    
 	
-	// LED 配置
-	leds: leds {
-		compatible = "gpio-leds";
-		
-		// NUMLOCK 状态灯
-		led_numlock: led_numlock {
-			gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>; // 使用gpio0 23作为示例引脚
-			label = "NUMLOCK LED";
-		};
-	};
+	
 
 	default_transform: keymap_transform_0 {
 		compatible = "zmk,matrix-transform";
