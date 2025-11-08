@@ -29,15 +29,9 @@
 
     };
     
+    
     keymap {
         compatible = "zmk,keymap";
-        
-        // 绑定LED状态指示行为
-        // 状态LED配置
-        status_leds {
-            compatible = "zmk,status-leds";
-            numlock = <&led_numlock>;
-        };
 
         default_layer {
         /*
