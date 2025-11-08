@@ -26,33 +26,17 @@
             wait-ms = <10>;
         };
         
-        // LED 状态指示行为
-        led_indicators: behavior_led_indicators {
-            compatible = "zmk,behavior-led-indicator";
-            label = "LED_INDICATORS";
-            #binding-cells = <1>;
-            
-            // 状态指示映射
-            numlock-indicator = <&led_numlock>;
-            // 可以在这里添加更多状态灯配置，如 capslock-indicator, scrolllock-indicator 等
-        };
+
     };
     
     keymap {
         compatible = "zmk,keymap";
         
         // 绑定LED状态指示行为
-        indicators {
-            compatible = "zmk,indicators";
-            
-            // NUMLOCK状态指示
-            numlock_indicator {
-                compatible = "zmk,indicator-status";
-                label = "NUMLOCK_INDICATOR";
-                status = <INPUT_LED_NUM_LOCK>;
-                behavior = <&led_indicators>;
-                property = <LED_INDICATOR_ON>;
-            };
+        // 状态LED配置
+        status_leds {
+            compatible = "zmk,status-leds";
+            numlock = <&led_numlock>;
         };
 
         default_layer {
