@@ -55,9 +55,9 @@
                 &trans        &trans          &trans         &trans
                 &trans        &trans          &trans         &trans
                 &trans        &trans          &trans         &trans
-                &trans        &trans          &trans         &trans
+                &bt BT_CLR 0        &bt BT_CLR 1          &bt BT_CLR 2         &trans
                 &bt BT_SEL 0  &bt BT_SEL 1    &bt BT_SEL 2   &bootloader
-                &bt BT_CLR    &kp DEL
+                &trans    &kp DEL
             >;
         };
     };
