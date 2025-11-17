@@ -12,12 +12,21 @@
 		zmk,matrix_transform = &default_transform;
 	};
 
-	/* 简化 LED 配置，只保留必要的 */
+	/* 蓝牙状态 LED 配置 */
 	leds {
 		compatible = "gpio-leds";
 		blue_led: led_0 {
 			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
 			label = "Blue LED";
+		};
+	};
+
+	/* 添加蓝牙行为配置 */
+	behaviors {
+		bluetooth: bluetooth {
+			compatible = "zmk,behavior-bluetooth";
+			label = "BLUETOOTH";
+			#binding-cells = <2>;
 		};
 	};
 
