@@ -12,18 +12,12 @@
 		zmk,matrix_transform = &default_transform;
 	};
 
-	/* 移除独立的bt-led-indicator配置，在chosen中直接配置 */
-	// 如果确实需要蓝牙状态LED，使用以下方式：
-	// chosen {
-	//     zephyr,bt-led-indicator = &led_bt_status;
-	// };
-
-	/* 可选：如果需要状态LED */
+	/* 简化 LED 配置，只保留必要的 */
 	leds {
 		compatible = "gpio-leds";
-		led_bt_status: led_bt_status {
+		blue_led: led_0 {
 			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
-			label = "Status LED";
+			label = "Blue LED";
 		};
 	};
 
