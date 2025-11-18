@@ -71,7 +71,7 @@ RC(5,0) RC(5,1) RC(5,2) RC(5,3)
         compatible = "gpio-leds";
         led0: led_0 {
             // 使用nice_nano_v2的引脚作为蓝牙状态指示灯
-            gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
             label = "BLE Status LED";
         };
     };
