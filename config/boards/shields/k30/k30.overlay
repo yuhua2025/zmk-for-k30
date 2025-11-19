@@ -16,18 +16,17 @@
 	leds {
 		compatible = "gpio-leds";
 		bt_led: bt_led {
-			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 使用GPIO0_15引脚，请根据实际连接修改
+			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 确认这是正确的GPIO引脚
 			label = "BT Status LED";
 		};
 	};
 
-	// 蓝牙状态指示器
-	led_indicators {
-		compatible = "zmk,led-indicators";
+	// 蓝牙状态指示器 - 使用更常见的配置
+	ble_indicators {
+		compatible = "zmk,ble-ble-indicators"; // 修改了兼容性字符串
 		bt_indicator: bt_indicator {
 			led = <&bt_led>;
-			layer = <0>;
-			indicator-name = "bt";
+			// 移除了可能无效的 layer 和 indicator-name 属性
 		};
 	};
 
