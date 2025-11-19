@@ -15,11 +15,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Initialize ZMK
+      - name: Initialize ZMK and force latest main
         run: |
           west init -l config
           west update
-          west zephyr-export
+          # 👇 关键：强制更新 zmk/app 到官方最新 main 分支
+          cd zmk/app
+          git remote set-url origin https://github.com/zmkfirmware/zmk.git
+          git fetch origin
+          git checkout main
+          git pull origin main
+          west update  # 确保子模块也更新
 
       - name: Build firmware
         run: |
