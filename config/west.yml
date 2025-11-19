@@ -2,12 +2,10 @@ manifest:
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
-    - name: kuolemax
-      url-base: https://github.com/kuolemax
   projects:
     - name: zmk
-      remote: kuolemax
-      revision: encoder-fix
+      remote: zmkfirmware  # 关键修改：使用官方仓库
+      revision: main       # 关键修改：使用main分支
       import: app/west.yml
   self:
     path: config
