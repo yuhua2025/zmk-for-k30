@@ -12,20 +12,21 @@
 		zmk,matrix_transform = &default_transform;
 	};
 
-	/* ========== 1. LED 设备（Zephyr 标准） ========== */
+	/* ========== LED 设备（Zephyr 标准，用于系统识别） ========== */
 	leds {
 		compatible = "gpio-leds";
 		status_led: status_led {
-			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 根据实际极性调整
+			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 或 LOW
 			label = "status_led";
 		};
 	};
 
-	/* ========== 2. ZMK LED 指示器声明（关键！） ========== */
-	zmk,led-indicators {
-		compatible = "zmk,led-indicators";
-		indicator {
-			gpios = <&status_led>; // 引用上面定义的 LED
+	/* ========== LED 指示器行为（ZMK 自动控制蓝牙状态） ========== */
+	behaviors {
+		led_ind: led_indicator {
+			compatible = "zmk,behavior-led-indicator";
+			// 直接指定 GPIO，这是当前最兼容的方式
+			led-gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
 		};
 	};
 
@@ -44,7 +45,6 @@
         >;
 	};
 
-	/* ========== 按键扫描器 ========== */
 	kscan0: kscan {
 		compatible = "zmk,kscan-gpio-matrix";
         label = "KSCAN";
