@@ -38,13 +38,7 @@
 			wait-ms = <10>;
 		};
 
-		// 蓝牙LED行为 - 自动控制LED显示蓝牙连接状态
-		bt_led_behavior: bt_led_behavior {
-			compatible = "zmk,behavior-extended";
-			label = "BT_LED_BEHAVIOR";
-			#binding-cells = <0>;
-			// 这个行为不需要绑定键，因为它是通过事件系统自动触发的
-		};
+
 	};
 
 	keymap {
@@ -77,7 +71,7 @@
 				&trans        &trans          &trans         &kp K_VOLUME_UP
 				&trans        &trans          &trans         &trans
 				&bt BT_SEL 0  &bt BT_SEL 1    &bt BT_SEL 2   &bootloader
-				&bt BT_CLR    &kp DEL          &bt_led_behavior &trans
+				&bt BT_CLR    &kp DEL          &trans &trans
 			>;
 		};
 	};
