@@ -45,35 +45,33 @@
         label = "KSCAN";
         wakeup-source;
         diode-direction = "col2row";
-        col-gpios
-            = <&gpio0 29 GPIO_ACTIVE_HIGH>,
-              <&gpio0 2 GPIO_ACTIVE_HIGH>,
-              <&gpio1 13 GPIO_ACTIVE_HIGH>,
-              <&gpio1 11 GPIO_ACTIVE_HIGH>;
-        row-gpios
-            = <&gpio0 22 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
-              <&gpio0 24 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
-              <&gpio1 0 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
-              <&gpio1 2 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
-              <&gpio1 4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
-              <&gpio1 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+        col-gpios = <&gpio0 29 GPIO_ACTIVE_HIGH>,
+                    <&gpio0 2 GPIO_ACTIVE_HIGH>,
+                    <&gpio1 13 GPIO_ACTIVE_HIGH>,
+                    <&gpio1 11 GPIO_ACTIVE_HIGH>;
+        row-gpios = <&gpio0 22 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
+                    <&gpio0 24 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
+                    <&gpio1 0 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
+                    <&gpio1 2 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
+                    <&gpio1 4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>,
+                    <&gpio1 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
     };
 
-	/* ========== 启用 USB CDC ACM 用于日志输出 ========== */
-	&usbd {
-		compatible = "nordic,nrf-usbd";
-		status = "okay";
-	};
+    /* ========== 6. 修复后的 USB CDC ACM 配置（关键！） ========== */
+&usbd {
+    compatible = "nordic,nrf-usbd";
+    status = "okay";
+};
 
-	/* 定义一个虚拟 UART 设备用于 CDC ACM */
-	chosen {
-		zephyr,console = &cdc_acm_uart;
-		zephyr,shell-uart = &cdc_acm_uart;
-		zephyr,uart-pipe = &cdc_acm_uart;
-	};
+    /* ========== 7. 修复后的 console 设置（关键！） ========== */
+    chosen {
+        zephyr,console = &cdc_acm_uart;
+        zephyr,shell-uart = &cdc_acm_uart;
+        zephyr,uart-pipe = &cdc_acm_uart;
+    };
 
-	cdc_acm_uart: cdc_acm_uart {
-		compatible = "zephyr,cdc-acm-uart";
-		label = "CDC_ACM";
-	};
+    cdc_acm_uart: cdc_acm_uart {
+        compatible = "zephyr,cdc-acm-uart";
+        label = "CDC_ACM";
+    };
 };
