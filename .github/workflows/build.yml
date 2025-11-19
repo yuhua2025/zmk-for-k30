@@ -15,17 +15,29 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Initialize ZMK and force latest main
+      - name: Initialize ZMK and upgrade to latest main
         run: |
+          # Step 1: 初始化本地 manifest
           west init -l config
+          
+          # Step 2: 拉取初始版本（含 zephyr 等）
           west update
-          # 👇 修复：先 add origin，再 fetch
+          
+          # Step 3: 导出 Zephyr 环境（第一次）
+          west zephyr-export
+
+          # Step 4: 强制升级 ZMK app 到官方最新 main
           cd zmk/app
           git remote add origin https://github.com/zmkfirmware/zmk.git || true
           git fetch origin
           git checkout main
           git pull origin main
-          west update  # 更新子模块（如 needed）
+
+          # Step 5: 再次更新子模块（可能 ZMK main 引用了新版本 zephyr）
+          west update
+
+          # Step 6: 重新导出 Zephyr 环境（关键！）
+          west zephyr-export
 
       - name: Build firmware
         run: |
