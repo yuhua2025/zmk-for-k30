@@ -19,13 +19,13 @@ jobs:
         run: |
           west init -l config
           west update
-          # 👇 关键：强制更新 zmk/app 到官方最新 main 分支
+          # 👇 修复：先 add origin，再 fetch
           cd zmk/app
-          git remote set-url origin https://github.com/zmkfirmware/zmk.git
+          git remote add origin https://github.com/zmkfirmware/zmk.git || true
           git fetch origin
           git checkout main
           git pull origin main
-          west update  # 确保子模块也更新
+          west update  # 更新子模块（如 needed）
 
       - name: Build firmware
         run: |
