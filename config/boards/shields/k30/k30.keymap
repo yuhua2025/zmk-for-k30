@@ -37,13 +37,22 @@
             wait-ms = <10>;
         };
 
-    
-        test_led: test_led {
+        // 简单的LED测试行为 - 修正版本
+        test_led_on: test_led_on {
             compatible = "zmk,behavior-macro";
-            label = "TEST_LED";
+            label = "TEST_LED_ON";
             #binding-cells = <0>;
             bindings = <
-                &kp A  // 按下时输入A，用于测试行为是否生效
+                &kp A  // 先测试按键功能是否正常
+            >;
+        };
+    
+        test_led_off: test_led_off {
+            compatible = "zmk,behavior-macro";
+            label = "TEST_LED_OFF";
+            #binding-cells = <0>;
+            bindings = <
+                &kp B  // 先测试按键功能是否正常
             >;
         };
     };
@@ -67,7 +76,7 @@
                 &trans        &trans          &trans         &trans
                 &trans        &trans          &trans         &kp K_VOLUME_DOWN
                 &trans        &trans          &trans         &kp K_VOLUME_UP
-                &trans        &kp A      &trans         &trans  // 修正了此处引用
+                &trans        &test_led_on    &test_led_off  &trans  // 修正：使用正确的行为引用
                 &bt BT_SEL 0  &bt BT_SEL 1    &bt BT_SEL 2   &bootloader
                 &bt BT_CLR    &kp DEL
             >;
