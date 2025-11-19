@@ -12,23 +12,22 @@
 		zmk,matrix_transform = &default_transform;
 	};
 	
-	// 蓝牙状态LED配置
 	leds {
-		compatible = "gpio-leds";
-		bt_led: bt_led {
-			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 确认这是正确的GPIO引脚
-			label = "BT Status LED";
-		};
-	};
+        compatible = "gpio-leds";
+        bt_led: bt_led {
+            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+            label = "BT Status LED";
+        };
+    };
 
-	// 蓝牙状态指示器 - 使用更常见的配置
-	ble_indicators {
-		compatible = "zmk,ble-ble-indicators"; // 修改了兼容性字符串
-		bt_indicator: bt_indicator {
-			led = <&bt_led>;
-			// 移除了可能无效的 layer 和 indicator-name 属性
-		};
-	};
+    // 尝试使用ZMK的标准行为
+    behaviors {
+        led_control: led_control {
+            compatible = "zmk,behavior-led";
+            #binding-cells = <0>;
+            led = <&bt_led>;
+        };
+    };
 
 	default_transform: keymap_transform_0 {
 		compatible = "zmk,matrix-transform";
