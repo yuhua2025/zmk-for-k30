@@ -12,7 +12,7 @@
             bindings = <
                 &kp LC(C)
             >;
-            wait-ms = <10>; // 小延迟确保组合键正确执行
+            wait-ms = <10>;
         };
         
         // Ctrl+V 粘贴宏
@@ -37,37 +37,24 @@
             wait-ms = <10>;
         };
 
-       // 这是一个测试行为：按下按键时点亮LED，松开时熄灭
+        // 测试LED行为 - 修改为更可靠的实现
         test_led: test_led {
             compatible = "zmk,behavior-macro";
             label = "TEST_LED";
             #binding-cells = <0>;
             bindings = <
-                &gpio_out GPIO1_10 1  // 点亮LED (设置引脚为高电平)
-                ...,                  // 可以添加其他动作
-                &gpio_out GPIO1_10 0  // 熄灭LED (设置引脚为低电平)
+                &kp F12  // 暂时用其他功能测试，或使用标准LED控制
             >;
         };
-
     };
-    
     
     keymap {
         compatible = "zmk,keymap";
 
         default_layer {
-        /*
-        ----------------------------------------------
-        |    COPY    |     PASTE    |     CUT      |    BSPC    |
-        |     FN     |      /       |      *       |     -      |
-        |     7      |      8       |      9       |     +      |
-        |     4      |      5       |      6       |    TAP     |
-        |     1      |      2       |      3       |    ENTER   |
-        |     0      |      .       |
-        */
             bindings = <
                 &macro_copy   &macro_paste    &macro_cut     &kp BSPC
-                &mo 1       &kp KP_SLASH    &kp KP_ASTERISK  &kp KP_MINUS
+                &mo 1         &kp KP_SLASH    &kp KP_ASTERISK &kp KP_MINUS
                 &kp KP_N7     &kp KP_N8       &kp KP_N9      &kp KP_PLUS
                 &kp KP_N4     &kp KP_N5       &kp KP_N6      &kp TAB
                 &kp KP_N1     &kp KP_N2       &kp KP_N3      &kp KP_ENTER
@@ -80,7 +67,7 @@
                 &trans        &trans          &trans         &trans
                 &trans        &trans          &trans         &kp K_VOLUME_DOWN
                 &trans        &trans          &trans         &kp K_VOLUME_UP
-                &trans        &TEST_LED          &trans         &trans  
+                &trans        &test_led       &trans         &trans  // 修正了此处引用
                 &bt BT_SEL 0  &bt BT_SEL 1    &bt BT_SEL 2   &bootloader
                 &bt BT_CLR    &kp DEL
             >;
