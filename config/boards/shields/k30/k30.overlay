@@ -59,21 +59,21 @@
               <&gpio1 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
     };
 
-    /* ========== 6. 修复后的 USB CDC ACM 配置（关键！） ========== */
-    &usbd {
-        compatible = "nordic,nrf-usbd";
-        status = "okay";
-    };
+	/* ========== 启用 USB CDC ACM 用于日志输出 ========== */
+	&usbd {
+		compatible = "nordic,nrf-usbd";
+		status = "okay";
+	};
 
-    /* ========== 7. 修复后的 console 设置（关键！） ========== */
-    chosen {
-        zephyr,console = &cdc_acm_uart;
-        zephyr,shell-uart = &cdc_acm_uart;
-        zephyr,uart-pipe = &cdc_acm_uart;
-    };
+	/* 定义一个虚拟 UART 设备用于 CDC ACM */
+	chosen {
+		zephyr,console = &cdc_acm_uart;
+		zephyr,shell-uart = &cdc_acm_uart;
+		zephyr,uart-pipe = &cdc_acm_uart;
+	};
 
-    cdc_acm_uart: cdc_acm_uart {
-        compatible = "zephyr,cdc-acm-uart";
-        label = "CDC_ACM";
-    };
+	cdc_acm_uart: cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "CDC_ACM";
+	};
 };
