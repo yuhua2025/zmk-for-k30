@@ -13,7 +13,7 @@ behaviors {
         >;
         wait-ms = <10>; // 小延迟确保组合键正确执行
     };
-    
+
     // Ctrl+V 粘贴宏
     macro_paste: behavior_macro_paste {
         compatible = "zmk,behavior-macro";
@@ -24,7 +24,7 @@ behaviors {
         >;
         wait-ms = <10>;
     };
-    
+
     // Ctrl+X 剪切宏
     macro_cut: behavior_macro_cut {
         compatible = "zmk,behavior-macro";
@@ -38,7 +38,7 @@ behaviors {
 
     // 蓝牙状态 LED 控制
     bluetooth_led: behavior_bluetooth_led {
-        compatible = "zmk,behavior-bluetooth-led";
+        compatible = "zmk,behavior-bt-led";
         label = "BLUETOOTH_LED";
         #binding-cells = <0>;
         bindings = <
