@@ -42,8 +42,8 @@ behaviors {
         label = "BLUETOOTH_LED";
         #binding-cells = <0>;
         bindings = <
-            &bt BT_STATE_CONNECTED        &led LED_BLUE  // 蓝牙连接时亮灯
-            &bt BT_STATE_DISCONNECTED     &led LED_BLUE  // 蓝牙断开时熄灯
+            &bt BT_STATE_CONNECTED  &led LED_BLUE  // 蓝牙连接时亮灯
+            &bt BT_STATE_DISCONNECTED &led LED_BLUE  // 蓝牙断开时熄灯
         >;
     };
 };
