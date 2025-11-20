@@ -48,13 +48,13 @@
             color = <0>;
         };
 
-        /* 覆盖默认 &bt 行为：使用完整路径引用避免 undefined label 错误 */
+        /* 覆盖默认 &bt 行为：进入配对模式 + LED 控制 */
         bt {
             compatible = "zmk,behavior-macro";
             label = "BT_WITH_LED";
             bindings = <
                 &{/behaviors/bt_led_on}
-                &bt_bt
+                &bt BT_PAIR
                 &{/behaviors/bt_led_off}
             >;
             wait-ms = <50>;
