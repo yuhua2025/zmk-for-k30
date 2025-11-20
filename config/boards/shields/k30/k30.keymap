@@ -9,7 +9,7 @@
             compatible = "zmk,behavior-macro";
             label = "MACRO_COPY";
             #binding-cells = <0>;
-            bindings = < &kp LC(C) >;
+            bindings = < &kp(LC(C)) >;
             wait-ms = <10>;
         };
         
@@ -18,7 +18,7 @@
             compatible = "zmk,behavior-macro";
             label = "MACRO_PASTE";
             #binding-cells = <0>;
-            bindings = < &kp LC(V) >;
+            bindings = < &kp(LC(V)) >;
             wait-ms = <10>;
         };
         
@@ -27,7 +27,7 @@
             compatible = "zmk,behavior-macro";
             label = "MACRO_CUT";
             #binding-cells = <0>;
-            bindings = < &kp LC(X) >;
+            bindings = < &kp(LC(X)) >;
             wait-ms = <10>;
         };
 
@@ -54,7 +54,7 @@
             label = "BT_WITH_LED";
             bindings = <
                 &{/behaviors/bt_led_on}
-                &bt BT_PAIR
+                &bt(BT_PAIR)
                 &{/behaviors/bt_led_off}
             >;
             wait-ms = <50>;
