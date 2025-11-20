@@ -19,6 +19,10 @@
         gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;  // LED 控制引脚
         default-state = "off";  // 默认关闭
     };
+    
+    chosen {
+        zmk,bt-led = &led;  // 绑定蓝牙 LED 控制
+    };
 
     default_transform: keymap_transform_0 {
         compatible = "zmk,matrix-transform";
