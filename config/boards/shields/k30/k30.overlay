@@ -9,8 +9,8 @@
 	chosen {
         zmk,kscan = &kscan0;
         zmk,matrix_transform = &default_transform;
-        // --- 关键：指定 ZMK 使用的 LED ---
-        zmk,leds = <&my_monochrome_led>;
+        // --- 关键：指向 gpio-leds 容器下的子节点 ---
+        zmk,leds = <&led_0_node>;
     };
 
 	default_transform: keymap_transform_0 {
@@ -48,38 +48,38 @@
 			;
 	};
 
-    // --- 单色 LED 定义 ---
-    // 使用 "gpio-led" 并提供 label
-    my_monochrome_led: led_0 {
-        compatible = "gpio-led";
-        label = "LED_0"; // ZMK 识别此 LED 的名称
-        gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
-        default-state = "on"; // 上电即亮
+    // --- 使用 gpio-leds 容器 ---
+    leds: gpio-leds { // 容器节点
+        compatible = "gpio-leds";
+        // --- 子节点：我们的单个 LED ---
+        led_0_node: led_0 { // 注意这里的名字变了
+            label = "LED_0"; // Label 通常放在这里
+            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+            default-state = "on";
+        };
     };
 
     // --- （可选）LED 控制行为 ---
-    // 如果你希望用按键控制，可以保留这部分
-    /*
     behaviors {
         behavior_led_toggle {
             compatible = "zmk,behavior-led-toggle";
             #binding-cells = <0>;
-            led = <&my_monochrome_led>;
+            // 指向新的子节点
+            led = <&led_0_node>;
         };
 
         behavior_led_brightness_up {
             compatible = "zmk,behavior-led-brightness-up";
             #binding-cells = <0>;
-            led = <&my_monochrome_led>;
+            led = <&led_0_node>;
             step = <10>;
         };
 
         behavior_led_brightness_down {
             compatible = "zmk,behavior-led-brightness-down";
             #binding-cells = <0>;
-            led = <&my_monochrome_led>;
+            led = <&led_0_node>;
             step = <10>;
         };
     };
-    */
 };
