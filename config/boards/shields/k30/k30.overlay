@@ -13,11 +13,12 @@
     };
     
     // 配置P1.10引脚为通电高电平
-    power_enable: power-enable {
+    power-enable {
         compatible = "gpio-hog";
         gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
         output-high;
         line-name = "POWER_ENABLE";
+        phandle = <&power_en>;
     };
     
 
@@ -60,4 +61,5 @@
 
 &gpio1 {
     status = "okay";
+    #gpio-cells = <2>;
 };
