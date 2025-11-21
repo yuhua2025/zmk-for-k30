@@ -50,7 +50,6 @@
             ;
     };
 
-
     // --- LED 定义 ---
     // 使用标准的 gpio-leds 容器结构
     leds: gpio-leds {
@@ -59,35 +58,19 @@
         // --- 我们的单个 LED 作为子节点 ---
         led_0_node: led_0 {
             label = "LED_0"; // 必须的 label，供 ZMK 和行为引用
-            // --- 修复拼写错误：gpus -> gpios ---
             gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 连接到 P1.10, 高电平有效
         };
     };
     // --- 结束 LED 定义 ---
 
-    // --- 手动定义 ZMK 行为 ---
-    // 这些行为将替代 <behaviors.dtsi> 中的部分内容
+    // --- 手动定义 ZMK 标准 LED 行为 ---
+    // 使用标准的 zmk,behavior-led 兼容性字符串
     behaviors {
-        // --- LED 开启行为 ---
-        led_on: behavior_led_on {
-            compatible = "zmk,behavior-led-on";
-            label = "BEHAVIOR_LED_ON";
-            #binding-cells = <0>; // 无额外参数
+        led: behavior_led {
+            compatible = "zmk,behavior-led";
+            label = "BEHAVIOR_LED";
+            #binding-cells = <1>; // 需要一个参数，例如 LED 编号 (通常为 0)
         };
-
-        // --- LED 关闭行为 ---
-        led_off: behavior_led_off {
-            compatible = "zmk,behavior-led-off";
-            label = "BEHAVIOR_LED_OFF";
-            #binding-cells = <0>; // 无额外参数
-        };
-
-        // --- LED 切换行为 (可选，如果需要) ---
-        // led_toggle: behavior_led_toggle {
-        //     compatible = "zmk,behavior-led-toggle";
-        //     label = "BEHAVIOR_LED_TOGGLE";
-        //     #binding-cells = <0>;
-        // };
     };
-    // --- 结束手动定义 ZMK 行为 ---
+    // --- 结束手动定义 ZMK 标准 LED 行为 ---
 };
