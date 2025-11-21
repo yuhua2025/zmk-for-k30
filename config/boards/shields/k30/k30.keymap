@@ -4,59 +4,6 @@
 #include <dt-bindings/zmk/backlight.h>
 
 / {
-    behaviors {
-        // Command+C 复制宏 (macOS)
-        macro_copy: behavior_macro_copy {
-            compatible = "zmk,behavior-macro";
-            label = "MACRO_COPY";
-            #binding-cells = <0>;
-            bindings = <
-                &macro_wait_time 30  // 等待时间增加到30ms
-                &macro_press &kp LGUI
-                &macro_wait_time 30  // 按下Command键后等待
-                &macro_tap &kp C
-                &macro_wait_time 30  // 按下字母键后等待
-                &macro_release &kp LGUI
-                &macro_wait_time 30  // 释放后等待
-            >;
-            wait-ms = <20>; // 增加默认延迟以适应蓝牙
-        };
-        
-        // Command+V 粘贴宏 (macOS)
-        macro_paste: behavior_macro_paste {
-            compatible = "zmk,behavior-macro";
-            label = "MACRO_PASTE";
-            #binding-cells = <0>;
-            bindings = <
-                &macro_wait_time 30
-                &macro_press &kp LGUI
-                &macro_wait_time 30
-                &macro_tap &kp V
-                &macro_wait_time 30
-                &macro_release &kp LGUI
-                &macro_wait_time 30
-            >;
-            wait-ms = <20>;
-        };
-        
-        // Command+X 剪切宏 (macOS)
-        macro_cut: behavior_macro_cut {
-            compatible = "zmk,behavior-macro";
-            label = "MACRO_CUT";
-            #binding-cells = <0>;
-            bindings = <
-                &macro_wait_time 30
-                &macro_press &kp LGUI
-                &macro_wait_time 30
-                &macro_tap &kp X
-                &macro_wait_time 30
-                &macro_release &kp LGUI
-                &macro_wait_time 30
-            >;
-            wait-ms = <20>;
-        };
-
-    };
     
     
     keymap {
@@ -73,7 +20,7 @@
         |     0      |      .       |
         */
             bindings = <
-                &macro_copy   &macro_paste    &macro_cut     &kp BSPC
+                &kp LGUI(KC_C)   &kp LGUI(KC_V)    &kp LGUI(KC_X)     &kp BSPC
                 &mo 1       &kp KP_SLASH    &kp KP_ASTERISK  &kp KP_MINUS
                 &kp KP_N7     &kp KP_N8       &kp KP_N9      &kp KP_PLUS
                 &kp KP_N4     &kp KP_N5       &kp KP_N6      &kp TAB
