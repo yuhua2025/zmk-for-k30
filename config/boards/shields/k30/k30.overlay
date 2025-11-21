@@ -13,13 +13,14 @@
     };
     
     // 配置P1.10引脚为通电高电平
-    p1_10_pin: p1-10-control {
+    power_enable: power-enable {
         compatible = "gpio-hog";
         gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
         output-high;
-        input-disable;
-        line-name = "P1_10_OUTPUT";
+        line-name = "POWER_ENABLE";
     };
+    
+
     
 	default_transform: keymap_transform_0 {
 		compatible = "zmk,matrix-transform";
