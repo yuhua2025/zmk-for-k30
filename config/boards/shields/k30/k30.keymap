@@ -65,18 +65,18 @@
         // --- FN 功能层 ---
         fn_layer {
             bindings = <
-                // 第一行保持不变
+                // 第一行 (物理键 1-4)
                 &trans        &trans          &trans         &trans
-                // 第二行：将原本的 &trans 改为 LED 控制
-                // 原: &trans        &trans          &trans         &kp K_VOLUME_DOWN
-                &behavior_led_on &behavior_led_off &trans         &kp K_VOLUME_DOWN
-                // 第三行保持不变
-                &trans        &trans          &trans         &kp K_VOLUME_UP
-                // 第四行保持不变
+                // 第二行 (物理键 5-8)
+                &trans        &trans          &trans         &kp K_VOLUME_DOWN
+                // 第三行 (物理键 9-12): 将 7, 8 键改为 LED 控制
+                // 物理键 9 (原 &trans)     物理键 10 (原 &trans)   物理键 11 (保持 &trans) 物理键 12 (原 &kp K_VOLUME_UP)
+                &behavior_led_on &behavior_led_off &trans         &kp K_VOLUME_UP
+                // 第四行 (物理键 13-16)
                 &trans        &trans          &trans         &trans
-                // 第五行保持不变
+                // 第五行 (物理键 17-20)
                 &bt BT_SEL 0  &bt BT_SEL 1    &bt BT_SEL 2   &bootloader
-                // 第六行保持不变
+                // 第六行 (物理键 21-22)
                 &bt BT_CLR    &kp DEL
             >;
         };
