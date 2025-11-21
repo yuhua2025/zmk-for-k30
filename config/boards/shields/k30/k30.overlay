@@ -55,13 +55,11 @@
         compatible = "gpio-leds"; // 容器节点
 
         // --- 我们的单个 LED 作为子节点 ---
-        // 注意：不要在此处使用 default-state，因为它不受支持
         led_0_node: led_0 {
             label = "LED_0"; // 必须的 label，供 ZMK 和行为引用
             gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 连接到 P1.10, 高电平有效
-            // default-state = "on"; // <-- 已移除，因不被支持
         };
     };
     // --- 结束 LED 定义 ---
-    // 注意：behaviors 节点已被移除，我们将使用 ZMK 内建别名
+    // 注意：不在此处定义 keymap 或宏行为
 };
