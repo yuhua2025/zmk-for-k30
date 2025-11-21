@@ -4,13 +4,16 @@
  * SPDX-License-Identifier: MIT
  */
 #include <dt-bindings/zmk/matrix_transform.h>
+// --- 包含 LED 指示器的绑定头文件 ---
+#include <dt-bindings/zmk/led_indicators.h>
+// -----------------------------------
 
 / {
 	chosen {
         zmk,kscan = &kscan0;
         zmk,matrix_transform = &default_transform;
         // --- 新增 chosen 属性指向电源指示灯 ---
-        zmk,led_indicators = &status_led;
+        zmk,led_indicators = &status_led_indicators;
         // ---------------------------------------
     };
 
@@ -22,7 +25,7 @@
         RC(0,0) RC(0,1) RC(0,2) RC(0,3)
         RC(1,0) RC(1,1) RC(1,2) RC(1,3)
         RC(2,0) RC(2,1) RC(2,2) RC(2,3)
-        RC(3,0) RC(3,1) RC(3,2) RC(3,3)
+        RC(3,0) RC(3,1) RCS(3,2) RC(3,3) // 注意这里RC(3,2)改为RCS(3,2)，表示短按
         RC(4,0) RC(4,1) RC(4,2) RC(4,3)
 		RC(5,0) RC(5,1)
 		>;
@@ -48,14 +51,29 @@
 			;
 	};
 
-    // --- 新增 LED 设备定义 ---
-    status_led: status_led {
+    // --- 新增符合 gpio-leds 规范的 LED 设备定义 (移除了 default-state) ---
+    status_leds: status_leds {
         compatible = "gpio-leds";
         status_led_gpio: led_0 {
             gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
             label = "STATUS";
-            default-state = "on"; // 上电即亮
+            // default-state 属性在此处无效并导致错误，已移除
         };
     };
-    // -------------------------
+    // --------------------------------------------------------------------
+
+    // --- 新增 ZMK 特定的 LED 指示器配置节点 ---
+    status_led_indicators: status_led_indicators {
+        compatible = "zmk,led-indicators";
+        // 引用上面定义的 gpio-leds 设备
+        leds = <&status_leds>;
+        // 配置指示器行为：
+        // num-leds: 此设备包含多少个 LED (我们只有1个)
+        num-leds = <1>;
+        // 初始状态配置：
+        // 为索引为 0 的 LED (即我们的唯一LED) 设置初始状态
+        // ZMK_LED_INDICATOR_STATUS_ON 表示上电常开
+        initial-states = <ZMK_LED_INDICATOR_STATUS_ON>;
+    };
+    // ---------------------------------------------------------------
 };
