@@ -13,13 +13,11 @@
     };
     
     // 配置P1.10引脚为通电高电平
-    high_pwr_pins: high-pwr-pins {
-        compatible = "gpio-leds";
-        high_pwr_p1_10: high-pwr-p1-10 {
-            label = "HIGH_PWR_P1_10";
-            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
-            default-state = "on";
-        };
+    p1_10_pin: p1-10-control {
+        compatible = "gpio-hog";
+        gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "P1_10_OUTPUT";
     };
     
 	default_transform: keymap_transform_0 {
