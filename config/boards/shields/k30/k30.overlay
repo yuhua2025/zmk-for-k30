@@ -50,6 +50,7 @@
             ;
     };
 
+
     // --- LED 定义 ---
     // 使用标准的 gpio-leds 容器结构
     leds: gpio-leds {
@@ -58,9 +59,8 @@
         // --- 我们的单个 LED 作为子节点 ---
         led_0_node: led_0 {
             label = "LED_0"; // 必须的 label，供 ZMK 和行为引用
-            gpus = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 连接 P1.10, 高电平有效
-             // 注意：此处修正拼写错误 gpios -> gpus (实际应为 gpios，但为了演示问题，暂时保留)
-             // 实际应用中请务必使用 gpios
+            // --- 修复拼写错误：gpus -> gpios ---
+            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 连接到 P1.10, 高电平有效
         };
     };
     // --- 结束 LED 定义 ---
