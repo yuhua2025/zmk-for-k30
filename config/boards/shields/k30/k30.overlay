@@ -4,15 +4,22 @@
  * SPDX-License-Identifier: MIT
  */
 #include <dt-bindings/zmk/matrix_transform.h>
+
 / {
 	chosen {
-        zmk,kscan = &kscan0;
-        zmk,matrix_transform = &default_transform;
-        // 将我们定义的LED指定为系统使用的LED
-        zmk,leds = <&my_monochrome_led>;
-    };
-
-
+		zmk,kscan = &kscan0;
+		zmk,matrix_transform = &default_transform;
+	};
+    
+	// 单色LED定义 - 使用GPIO1引脚10
+	leds {
+		compatible = "gpio-leds";
+		blue_led: led_0 {
+			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+			label = "Blue LED";
+		};
+	};
+	
 	default_transform: keymap_transform_0 {
 		compatible = "zmk,matrix-transform";
 		columns = <4>;
@@ -26,6 +33,7 @@
 		RC(5,0) RC(5,1)
 		>;
 	};
+	
 	kscan0: kscan {
 		compatible = "zmk,kscan-gpio-matrix";
         label = "KSCAN";
@@ -46,45 +54,4 @@
 			, <&gpio1 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
 			;
 	};
-
-    // --- 新增 LED 定义 ---
-    // 定义一个名为 my_monochrome_led 的 LED 设备
-    my_monochrome_led: led_0 {
-        compatible = "gpio-leds"; // 使用标准的 GPIO LED 驱动
-        label = "BACKLIGHT"; // LED 的标签，用于标识
-        gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>; // 指定 GPIO 引脚：gpio1, pin 10, 高电平有效
-        default-state = "on"; // 设置默认状态为开启 (可选: "off", "keep")
-        // linux,default-trigger = "none"; // 可选：设置默认触发方式，例如 "heartbeat" 等
-    };
-
-    // --- 新增 LED 行为定义 (如果需要通过按键控制) ---
-    behaviors {
-        // 定义切换LED开关的行为
-        led_toggle: behavior_led_toggle {
-            compatible = "zmk,behavior-led-toggle";
-            label = "LED_TOGGLE";
-            #binding-cells = <0>; // 不需要额外参数
-            leds = <&my_monochrome_led>; // 指定要控制的LED
-        };
-
-        // 定义增加LED亮度的行为
-        led_brightness_up: behavior_led_brightness_up {
-            compatible = "zmk,behavior-led-brightness-up";
-            label = "LED_BRIGHTNESS_UP";
-            #binding-cells = <0>;
-            leds = <&my_monochrome_led>;
-            step = <10>; // 每次按增加10%亮度
-        };
-
-        // 定义减少LED亮度的行为
-        led_brightness_down: behavior_led_brightness_down {
-            compatible = "zmk,behavior-led-brightness-down";
-            label = "LED_BRIGHTNESS_DOWN";
-            #binding-cells = <0>;
-            leds = <&my_monochrome_led>;
-            step = <10>; // 每次按减少10%亮度
-        };
-    };
-    // --- 结束新增 ---
-
 };
