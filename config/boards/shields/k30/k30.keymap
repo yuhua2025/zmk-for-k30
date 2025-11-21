@@ -11,11 +11,15 @@
             label = "MACRO_COPY";
             #binding-cells = <0>;
             bindings = <
+                &macro_wait_time 30  // 等待时间增加到30ms
                 &macro_press &kp LGUI
+                &macro_wait_time 30  // 按下Command键后等待
                 &macro_tap &kp C
+                &macro_wait_time 30  // 按下字母键后等待
                 &macro_release &kp LGUI
+                &macro_wait_time 30  // 释放后等待
             >;
-            wait-ms = <10>; // 小延迟确保组合键正确执行
+            wait-ms = <20>; // 增加默认延迟以适应蓝牙
         };
         
         // Command+V 粘贴宏 (macOS)
@@ -24,11 +28,15 @@
             label = "MACRO_PASTE";
             #binding-cells = <0>;
             bindings = <
+                &macro_wait_time 30
                 &macro_press &kp LGUI
+                &macro_wait_time 30
                 &macro_tap &kp V
+                &macro_wait_time 30
                 &macro_release &kp LGUI
+                &macro_wait_time 30
             >;
-            wait-ms = <10>;
+            wait-ms = <20>;
         };
         
         // Command+X 剪切宏 (macOS)
@@ -37,11 +45,15 @@
             label = "MACRO_CUT";
             #binding-cells = <0>;
             bindings = <
+                &macro_wait_time 30
                 &macro_press &kp LGUI
+                &macro_wait_time 30
                 &macro_tap &kp X
+                &macro_wait_time 30
                 &macro_release &kp LGUI
+                &macro_wait_time 30
             >;
-            wait-ms = <10>;
+            wait-ms = <20>;
         };
 
     };
