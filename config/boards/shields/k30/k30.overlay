@@ -3,25 +3,17 @@
  *
  * SPDX-License-Identifier: MIT
  */
-
 #include <dt-bindings/zmk/matrix_transform.h>
 
 / {
 	chosen {
-    zmk,kscan = &kscan0;
-    zmk,matrix_transform = &default_transform;
+        zmk,kscan = &kscan0;
+        zmk,matrix_transform = &default_transform;
+        // --- 新增 chosen 属性指向电源指示灯 ---
+        zmk,led_indicators = &status_led;
+        // ---------------------------------------
     };
-    
-    // 配置P1.10引脚为通电高电平
-    power-enable {
-        compatible = "gpio-hog";
-        gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
-        output-high;
-        line-name = "POWER_ENABLE";
-    };
-    
 
-    
 	default_transform: keymap_transform_0 {
 		compatible = "zmk,matrix-transform";
 		columns = <4>;
@@ -37,9 +29,8 @@
 	};
 	kscan0: kscan {
 		compatible = "zmk,kscan-gpio-matrix";
-        label = "KSCAN";  // ← 添加这行
+        label = "KSCAN";
         wakeup-source;
-
         diode-direction = "col2row";
 		col-gpios
 			= <&gpio0 29 GPIO_ACTIVE_HIGH>
@@ -56,9 +47,15 @@
 			, <&gpio1 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
 			;
 	};
-};
 
-&gpio1 {
-    status = "okay";
-    #gpio-cells = <2>;
+    // --- 新增 LED 设备定义 ---
+    status_led: status_led {
+        compatible = "gpio-leds";
+        status_led_gpio: led_0 {
+            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+            label = "STATUS";
+            default-state = "on"; // 上电即亮
+        };
+    };
+    // -------------------------
 };
