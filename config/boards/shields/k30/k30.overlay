@@ -18,59 +18,54 @@
     };
 
     // --- 1. 定义 GPIO PWM 控制器 ---
-    // 注意：这个节点名 gpiopwm 是自定义的标签，用于引用
-    gpiopwm: gpiopwm {
+    // 这个是真正的 PWM 控制器，由 pwm-gpio 驱动实现
+    gpiopwm: pwmleds { // 注意：节点名使用 pwmleds，这是为了让 pwm-gpio 驱动更容易找到它
+                      // 标签名仍然是 gpiopwm
         compatible = "pwm-gpio";
-        #pwm-cells = <2>; // 标准 PWM 单元需要两个单元地址参数 (<channel>, <flags>)
+        #pwm-cells = <2>; // 必须：声明该控制器提供 2 个 cells (channel, flags)
 
-        // 定义红色通道 PWM (连接到 P1.10)
-        // 注意 pwms 属性格式: <&controller_node channel flags>
-        red_pwm: red_pwm {
-            pwms = <&gpiopwm 0 PWM_POLARITY_INVERTED>; // 通道 0, 反相 (因为是共阴)
-            gpio = <&gpio1 10 GPIO_ACTIVE_HIGH>; // P1.10, 高电平有效
-        };
-
-        // 定义绿色通道 PWM (连接到 P0.3)
-        green_pwm: green_pwm {
-            pwms = <&gpiopwm 1 PWM_POLARITY_INVERTED>; // 通道 1, 反相
-            gpio = <&gpio0 3 GPIO_ACTIVE_HIGH>; // P0.3, 高电平有效
-        };
-
-        // 定义蓝色通道 PWM (连接到 P0.28)
-        blue_pwm: blue_pwm {
-            pwms = <&gpiopwm 2 PWM_POLARITY_INVERTED>; // 通道 2, 反相
-            gpio = <&gpio0 28 GPIO_ACTIVE_HIGH>; // P0.28, 高电平有效
-        };
+        // --- 不再为每个颜色单独创建子节点 ---
+        // 我们将在 pwm-leds 中直接指定通道
     };
 
     // --- 2. 定义具体的 PWM LED (使用 pwm-leds 驱动) ---
-    // 注意：这里使用标准的 compatible 字符串 "pwm-leds"
-    // 并且这个节点放在根 "/" 下，不是嵌套在别的节点里
-    // Zephyr 驱动会处理这个节点并创建对应的 LED 设备
-    backlight_pwm_led: pwmleds {
+    // 这个节点告诉 pwm-leds 驱动如何控制 LED
+    // 注意 compatible 字符串
+    pwm_leds_device: pwm-leds { // 节点名使用标准的 pwm-leds
+                                 // 标签名是 pwm_leds_device
         compatible = "pwm-leds"; // 标准 PWM LED 驱动
-        // 在这个节点下定义具体的 LED
+
+        // --- 定义单个 RGB LED ---
+        // pwms 属性现在直接引用 gpiopwm 控制器和通道号
         backlight_led: led_0 { // 子节点名 led_0 是标准的
             label = "backlight_led"; // LED 标签
-            // pwms 属性引用之前定义的 PWM 通道
-            pwms = <&red_pwm   0 PWM_POLARITY_INVERTED>,
-                   <&green_pwm 0 PWM_POLARITY_INVERTED>,
-                   <&blue_pwm  0 PWM_POLARITY_INVERTED>;
+            // pwms = <&pwm_controller channel flags>
+            // 通道 0 -> Red (P1.10)
+            // 通道 1 -> Green (P0.3)
+            // 通道 2 -> Blue (P0.28)
+            pwms = <&gpiopwm 0 PWM_POLARITY_INVERTED>, // Red on channel 0
+                   <&gpiopwm 1 PWM_POLARITY_INVERTED>, // Green on channel 1
+                   <&gpiopwm 2 PWM_POLARITY_INVERTED>; // Blue on channel 2
             max-brightness = <255>; // 最大亮度值
-            color = <255 255 255>; // 白色光 (RGB 255,255,255) - 这决定了混合的基础色温
+            color = <255 255 255>; // 白色光 (RGB 255,255,255) - 基础色温
+            // --- 关键：为 pwm-gpio 指定具体的 GPIO 引脚 ---
+            // 这些属性是 pwm-gpio 特定的，用来关联通道和 GPIO
+            gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>, // Channel 0 (Red) -> P1.10
+                    <&gpio0 3  GPIO_ACTIVE_HIGH>, // Channel 1 (Green) -> P0.3
+                    <&gpio0 28 GPIO_ACTIVE_HIGH>; // Channel 2 (Blue) -> P0.28
         };
     };
 
     // --- 3. 定义 ZMK LED 设备 ---
     // 这个节点告诉 ZMK 如何使用上面定义的 LED
-    zmk_backlight: leds {
+    zmk_leds: leds {
         compatible = "zmk,leds";
 
         // 定义名为 my_backlight 的 ZMK 背光设备
         my_backlight: backlight {
             label = "my_backlight"; // 设备标签
             leds = <&backlight_led>; // 关联之前定义的 PWM LED 子节点
-            trigger-binding = <&none>; // 默认触发方式，通常由 ZMK 内部管理
+            trigger-binding = <&none>; // 默认触发方式
             // breathe-period-ms = <3000>; // 可选：设置呼吸效果周期
             // blink-duration-ms = <500>;  // 可选：设置闪烁持续时间
         };
