@@ -16,7 +16,7 @@
     
     /* USB CDC ACM配置，用于USB日志功能 */
     aliases {
-        cdc_acm_0 = &cdc_acm_uart;
+        cdc-acm-0 = &cdc_acm_uart;
     };
     
     chosen {
