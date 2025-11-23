@@ -47,7 +47,7 @@ jobs:
             echo "CONFIG_ZMK_USB_LOGGING=y" > app/snippets/zmk-usb-logging/zmk-usb-logging.conf
             
             # 创建设备树覆盖文件
-            cat > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay << 'EOF'
+            cat > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay << 'EOVERLAY'
             / {
                 chosen {
                     zephyr,console = &snippet_zmk_usb_logging_uart;
@@ -61,24 +61,24 @@ jobs:
                     label = "CDC_ACM_0";
                 };
             };
-            EOF
+            EOVERLAY
           fi
-          
+
           # 7. 确保k30.conf包含必要的USB日志依赖配置
           if [ -f "app/boards/shields/k30/k30.conf" ]; then
             echo "添加USB日志依赖配置到k30.conf"
-            cat >> app/boards/shields/k30/k30.conf << 'EOF'
-
-# USB日志记录配置 - 启用USB日志所需的所有依赖项
-CONFIG_LOG=y
-CONFIG_USB_DEVICE=y
-CONFIG_USB_DEVICE_STACK=y
-CONFIG_SERIAL_SUPPORT_INTERRUPT=y
-CONFIG_CONSOLE=y
-CONFIG_USB_CDC_ACM=y
-CONFIG_UART_CONSOLE=y
-CONFIG_UART_INTERRUPT_DRIVEN=y
-EOF
+            { \
+              echo "" \
+              echo "# USB日志记录配置 - 启用USB日志所需的所有依赖项" \
+              echo "CONFIG_LOG=y" \
+              echo "CONFIG_USB_DEVICE=y" \
+              echo "CONFIG_USB_DEVICE_STACK=y" \
+              echo "CONFIG_SERIAL_SUPPORT_INTERRUPT=y" \
+              echo "CONFIG_CONSOLE=y" \
+              echo "CONFIG_USB_CDC_ACM=y" \
+              echo "CONFIG_UART_CONSOLE=y" \
+              echo "CONFIG_UART_INTERRUPT_DRIVEN=y" \
+            } >> app/boards/shields/k30/k30.conf
           fi
 
       - name: Debug Information
@@ -99,7 +99,7 @@ EOF
         run: |
           echo "开始构建启用USB日志的K30固件..."
           echo "构建命令: west build -b nrfmicro_13 -s app -- -DSHIELD=k30 -S zmk-usb-logging"
-          
+
           # 捕获错误并输出详细日志
           west build -b nrfmicro_13 -s app -- -DSHIELD=k30 -S zmk-usb-logging || {
             echo "构建失败! 检查常见问题..."
@@ -118,7 +118,7 @@ EOF
           echo "检查构建输出..."
           # 查找所有可能的固件文件位置
           FIRMWARE_FILES=$(find . -name "zmk.hex" -o -name "zmk.uf2")
-          
+
           if [ -z "$FIRMWARE_FILES" ]; then
             echo "错误: 未找到固件文件!"
             # 检查标准构建目录是否存在
