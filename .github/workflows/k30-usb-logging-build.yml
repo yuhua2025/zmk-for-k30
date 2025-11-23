@@ -1,0 +1,160 @@
+name: Build K30 Keyboard - USB Logging Firmware
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+      options: --user root
+
+    steps:
+      - name: Checkout your repo (to get your k30 config)
+        uses: actions/checkout@v4
+
+      - name: Clone and set up official ZMK
+        run: |
+          # 1. 克隆官方 ZMK
+          git clone https://github.com/zmkfirmware/zmk.git && \
+          cd zmk && \
+
+          # 2. 初始化 West workspace using ZMK's app as manifest
+          west init -l app && \
+
+          # 3. 拉取所有依赖（zephyr, modules, etc.）
+          west update && \
+
+          # 4. 导出 Zephyr 环境
+          west zephyr-export && \
+
+          # 5. 注入你的 shield 配置
+          mkdir -p app/boards/shields/k30 && \
+          cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30"/* app/boards/shields/k30/ 2>/dev/null || echo "注意: 没有找到config目录，将使用默认配置" && \
+
+          # 6. 检查zmk-usb-logging snippet是否存在
+          if [ ! -d "app/snippets/zmk-usb-logging" ]; then
+            echo "创建zmk-usb-logging snippet目录" && \
+            mkdir -p app/snippets/zmk-usb-logging && \
+            
+            # 创建snippet配置文件
+            echo "name: zmk-usb-logging" > app/snippets/zmk-usb-logging/snippet.yml && \
+            echo "append: " >> app/snippets/zmk-usb-logging/snippet.yml && \
+            echo "  - zmk-usb-logging.conf" >> app/snippets/zmk-usb-logging/snippet.yml && \
+            echo "  - zmk-usb-logging.overlay" >> app/snippets/zmk-usb-logging/snippet.yml && \
+            
+            # 创建配置文件
+            echo "CONFIG_ZMK_USB_LOGGING=y" > app/snippets/zmk-usb-logging/zmk-usb-logging.conf && \
+            
+            # 创建设备树覆盖文件
+            cat > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay << 'EOVERLAY'
+            / {
+                chosen {
+                    zephyr,console = &snippet_zmk_usb_logging_uart;
+                    zephyr,shell-uart = &snippet_zmk_usb_logging_uart;
+                };
+            };
+
+            &zephyr_udc0 {
+                snippet_zmk_usb_logging_uart: snippet_zmk_usb_logging_uart {
+                    compatible = "zephyr,cdc-acm-uart";
+                    label = "CDC_ACM_0";
+                };
+            };
+EOVERLAY
+          fi && \
+
+          # 7. 确保k30.conf包含必要的USB日志依赖配置
+          if [ -f "app/boards/shields/k30/k30.conf" ]; then
+            echo "添加USB日志依赖配置到k30.conf" && \
+            cat >> app/boards/shields/k30/k30.conf << 'EOF'
+
+# USB日志记录配置 - 启用USB日志所需的所有依赖项
+CONFIG_LOG=y
+CONFIG_USB_DEVICE=y
+CONFIG_USB_DEVICE_STACK=y
+CONFIG_SERIAL_SUPPORT_INTERRUPT=y
+CONFIG_CONSOLE=y
+CONFIG_USB_CDC_ACM=y
+CONFIG_UART_CONSOLE=y
+CONFIG_UART_INTERRUPT_DRIVEN=y
+EOF
+          fi && \
+          
+          # 确认所有配置已完成
+          echo "ZMK设置和配置完成"
+
+      - name: Debug Information
+        working-directory: zmk
+        run: |
+          echo "工作目录: $(pwd)"
+          echo "列出snippets目录内容..."
+          ls -la app/snippets/
+          echo "列出zmk-usb-logging目录内容..."
+          ls -la app/snippets/zmk-usb-logging/
+          echo "列出k30配置文件内容..."
+          if [ -f "app/boards/shields/k30/k30.conf" ]; then
+            cat app/boards/shields/k30/k30.conf
+          fi
+
+      - name: Build firmware with USB Logging
+        working-directory: zmk
+        run: |
+          echo "开始构建启用USB日志的K30固件..."
+          echo "构建命令: west build -b nrfmicro_13 -s app -- -DSHIELD=k30 -S zmk-usb-logging"
+
+          # 捕获错误并输出详细日志
+          west build -b nrfmicro_13 -s app -- -DSHIELD=k30 -S zmk-usb-logging || {
+            echo "构建失败! 检查常见问题..."
+            find . -name "zephyr.log" -exec cat {} \;
+            # 显示最终的配置文件内容以调试
+            if [ -f "build/zephyr/.config" ]; then
+              echo "最终配置文件内容:"
+              grep -E "USB|LOG|SERIAL|CONSOLE" build/zephyr/.config
+            fi
+            exit 1
+          }
+
+      - name: Verify Build Output
+        working-directory: zmk
+        run: |
+          echo "检查构建输出..."
+          # 查找所有可能的固件文件位置
+          FIRMWARE_FILES=$(find . -name "zmk.hex" -o -name "zmk.uf2")
+
+          if [ -z "$FIRMWARE_FILES" ]; then
+            echo "错误: 未找到固件文件!"
+            # 检查标准构建目录是否存在
+            if [ -d "build/zephyr" ]; then
+              echo "构建目录内容:"
+              ls -la build/zephyr/
+              # 显示构建日志以帮助调试
+              if [ -f "build/zephyr/build.log" ]; then
+                echo "构建日志内容:"
+                tail -n 100 build/zephyr/build.log
+              fi
+            else
+              echo "构建目录不存在，检查其他可能的位置..."
+              find . -name "build" -type d | xargs ls -la 2>/dev/null || echo "未找到构建目录"
+            fi
+            exit 1
+          else
+            echo "找到固件文件:"
+            echo "$FIRMWARE_FILES"
+            # 显示固件文件的详细信息
+            for file in $FIRMWARE_FILES; do
+              echo "文件信息: $file"
+              ls -lh "$file"
+            done
+          fi
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: k30-usb-logging-firmware-${{ github.sha }}
+          path: |
+            zmk/build/zephyr/zmk.uf2
+            zmk/build/zephyr/zmk.hex
+            zmk/build/zephyr/zephyr.bin
+          if-no-files-found: warn
+          retention-days: 14
