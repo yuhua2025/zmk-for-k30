@@ -88,7 +88,6 @@
 	cdc_acm_uart: cdc-acm-uart@0 {
 		compatible = "zephyr,cdc-acm-uart";
 		reg = <0>;
-		label = "cdc-acm-0";
 	};
 };
 
