@@ -75,36 +75,37 @@ jobs:
             echo "zmk-usb-logging snippet已存在"
           fi
 
-          # 确保k30目录存在
+          # 确保k30目录存在（注意路径应该一致，使用zmk/app前缀）
           mkdir -p zmk/app/boards/shields/k30
+          echo "已创建k30目录: $(ls -la zmk/app/boards/shields/ 2>/dev/null)"
 
           # 确保k30.conf包含必要的USB日志依赖配置
-          if [ -f "app/boards/shields/k30/k30.conf" ]; then
+          if [ -f "zmk/app/boards/shields/k30/k30.conf" ]; then
             echo "检查k30.conf是否已包含USB日志配置"
             # 检查是否已包含配置
-            if ! grep -q "CONFIG_ZMK_USB_LOGGING" app/boards/shields/k30/k30.conf; then
+            if ! grep -q "CONFIG_ZMK_USB_LOGGING" zmk/app/boards/shields/k30/k30.conf; then
               echo "添加USB日志依赖配置到k30.conf"
-              echo 'CONFIG_LOG=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_USB_DEVICE=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_USB_DEVICE_STACK=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_SERIAL_SUPPORT_INTERRUPT=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_CONSOLE=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_USB_CDC_ACM=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_UART_CONSOLE=y' >> app/boards/shields/k30/k30.conf
-              echo 'CONFIG_UART_INTERRUPT_DRIVEN=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_LOG=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_USB_DEVICE=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_USB_DEVICE_STACK=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_SERIAL_SUPPORT_INTERRUPT=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_CONSOLE=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_USB_CDC_ACM=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_UART_CONSOLE=y' >> zmk/app/boards/shields/k30/k30.conf
+              echo 'CONFIG_UART_INTERRUPT_DRIVEN=y' >> zmk/app/boards/shields/k30/k30.conf
             else
               echo "k30.conf已包含USB日志配置"
             fi
           else
             echo "创建k30.conf并添加USB日志配置"
-            echo 'CONFIG_LOG=y' > app/boards/shields/k30/k30.conf
-            echo 'CONFIG_USB_DEVICE=y' >> app/boards/shields/k30/k30.conf
-            echo 'CONFIG_USB_DEVICE_STACK=y' >> app/boards/shields/k30/k30.conf
-            echo 'CONFIG_SERIAL_SUPPORT_INTERRUPT=y' >> app/boards/shields/k30/k30.conf
-            echo 'CONFIG_CONSOLE=y' >> app/boards/shields/k30/k30.conf
-            echo 'CONFIG_USB_CDC_ACM=y' >> app/boards/shields/k30/k30.conf
-            echo 'CONFIG_UART_CONSOLE=y' >> app/boards/shields/k30/k30.conf
-            echo 'CONFIG_UART_INTERRUPT_DRIVEN=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_LOG=y' > zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_USB_DEVICE=y' >> zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_USB_DEVICE_STACK=y' >> zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_SERIAL_SUPPORT_INTERRUPT=y' >> zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_CONSOLE=y' >> zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_USB_CDC_ACM=y' >> zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_UART_CONSOLE=y' >> zmk/app/boards/shields/k30/k30.conf
+            echo 'CONFIG_UART_INTERRUPT_DRIVEN=y' >> zmk/app/boards/shields/k30/k30.conf
           fi
 
       - name: Debug Information
@@ -112,21 +113,21 @@ jobs:
           echo "工作目录: $(pwd)"
           echo "列出根目录内容..."
           ls -la
-          echo "检查app目录..."
-          ls -la app/ 2>/dev/null || echo "app目录不存在"
+          echo "检查zmk/app目录..."
+          ls -la zmk/app/ 2>/dev/null || echo "zmk/app目录不存在"
           echo "列出snippets目录内容..."
-          ls -la app/snippets/ 2>/dev/null || echo "snippets目录不存在"
+          ls -la zmk/app/snippets/ 2>/dev/null || echo "zmk/app/snippets目录不存在"
           echo "列出zmk-usb-logging目录内容..."
-          ls -la app/snippets/zmk-usb-logging/ 2>/dev/null || echo "zmk-usb-logging snippet不存在"
+          ls -la zmk/app/snippets/zmk-usb-logging/ 2>/dev/null || echo "zmk-usb-logging snippet不存在"
           echo "检查snippet配置文件..."
-          if [ -f "app/snippets/zmk-usb-logging/snippet.yml" ]; then
+          if [ -f "zmk/app/snippets/zmk-usb-logging/snippet.yml" ]; then
             echo "snippet.yml内容:"
-            cat app/snippets/zmk-usb-logging/snippet.yml
+            cat zmk/app/snippets/zmk-usb-logging/snippet.yml
           fi
           echo "列出k30配置文件内容..."
-          if [ -f "app/boards/shields/k30/k30.conf" ]; then
+          if [ -f "zmk/app/boards/shields/k30/k30.conf" ]; then
             echo "k30.conf内容:"
-            cat app/boards/shields/k30/k30.conf
+            cat zmk/app/boards/shields/k30/k30.conf
           fi
 
       - name: Build firmware
