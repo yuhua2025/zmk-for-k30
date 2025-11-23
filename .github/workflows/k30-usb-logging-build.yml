@@ -31,7 +31,13 @@ jobs:
             ${{ runner.os }}-
       - name: Initialize ZMK
         run: |
-          west init -l config
+          # 检查目录结构并找到正确的west.yml文件位置
+          echo "检查目录结构..."
+          ls -la
+          find . -name "west.yml" -type f
+
+          # 直接在根目录初始化，让west自动查找west.yml
+          west init
           west update
           west zephyr-export
       - name: Check and create USB logging snippet
