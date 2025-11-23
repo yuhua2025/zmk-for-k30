@@ -6,28 +6,4 @@ if SHIELD_K30
 config ZMK_KEYBOARD_NAME
 	default "k30"
 
-# 启用USB设备栈
-config USB_DEVICE_STACK
-	default y
-
-# 设置USB产品信息
-config USB_DEVICE_PRODUCT
-	default "ZMK Keyboard"
-
-# 启用USB CDC ACM功能
-config USB_CDC_ACM
-	default y
-
-# 设置CDC ACM环形缓冲区大小
-config USB_CDC_ACM_RINGBUF_SIZE
-	default 1024
-
-# 启用控制台功能
-config CONSOLE
-	default y
-
-# 启用shell功能，用于日志输出
-config SHELL
-	default y
-
 endif
