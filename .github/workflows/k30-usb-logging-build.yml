@@ -6,11 +6,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: docker.io/zmkfirmware/zmk-build-arm:3.5
+      image: zmkfirmware/zmk-build-arm:stable
+      options: --user root
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          submodules: recursive
           persist-credentials: false
       - name: Cache west modules
         uses: actions/cache@v4
@@ -27,105 +29,48 @@ jobs:
             ${{ runner.os }}-build-${{ env.cache-name }}-
             ${{ runner.os }}-build-
             ${{ runner.os }}-
-      - name: 调试目录结构
+      - name: Initialize ZMK
         run: |
-          echo "当前目录结构："
-          find . -maxdepth 3 -type f -name "west.yml"
-          ls -la
-          echo "app目录内容："
-          ls -la app/ 2>/dev/null || echo "app目录不存在"
-      - name: 初始化workspace (west init)
-        run: |
-          # 清理可能存在的失败初始化
-          if [ -d ".west" ]; then
-            echo "清理之前可能失败的初始化..."
-            rm -rf .west
-          fi
-          
-          # 检查和显示目录结构
-          echo "详细检查目录结构："
-          find . -type f -name "west.yml"
-          echo "配置目录内容："
-          ls -la config/ 2>/dev/null || echo "config目录不存在"
-          
-          # 优先检查根目录west.yml
-          if [ -f "west.yml" ]; then
-            echo "在根目录中找到west.yml，直接使用当前目录初始化"
-            west init -l .
-          # 检查app目录
-          elif [ -f "app/west.yml" ]; then
-            echo "在app目录中找到west.yml，使用app目录初始化"
-            west init -l app
-          # 检查config目录（根据GitHub仓库结构）
-          elif [ -f "config/west.yml" ]; then
-            echo "在config目录中找到west.yml，使用config目录初始化"
-            west init -l config
-          else
-            # 查找项目中所有的west.yml文件
-            echo "尝试搜索所有可能的west.yml文件..."
-            find . -type f -name "west.yml" -exec echo "找到: {}" \;
-            
-            # 作为备选方案，使用当前项目作为manifest
-            echo "未找到west.yml文件，尝试使用当前目录作为基础初始化"
-            # 创建基本的west.yml文件
-            cat > west.yml << 'EOF'
-manifest:
-  remotes:
-    - name: zmkfirmware
-      url-base: https://github.com/zmkfirmware
-  projects:
-    - name: zmk
-      remote: zmkfirmware
-      revision: main
-      import: app/west.yml
-  self:
-    path: .
-EOF
-            echo "创建了基础west.yml文件，现在初始化..."
-            west init -l .
-          fi
-      - name: Update modules (west update)
-        run: west update --fetch-opt=--filter=tree:0
-      - name: Export Zephyr CMake package (west zephyr-export)
-        run: west zephyr-export
+          west init -l config
+          west update
+          west zephyr-export
       - name: Check and create USB logging snippet
         run: |
           # 确保zmk-usb-logging snippet存在
-          if [ ! -d "app/snippets/zmk-usb-logging" ]; then
+          if [ ! -d "zmk/app/snippets/zmk-usb-logging" ]; then
             echo "创建zmk-usb-logging snippet目录"
-            mkdir -p app/snippets/zmk-usb-logging
+            mkdir -p zmk/app/snippets/zmk-usb-logging
             
             # 创建snippet配置文件
-            echo "name: zmk-usb-logging" > app/snippets/zmk-usb-logging/snippet.yml
-            echo "append: " >> app/snippets/zmk-usb-logging/snippet.yml
-            echo "  - zmk-usb-logging.conf" >> app/snippets/zmk-usb-logging/snippet.yml
-            echo "  - zmk-usb-logging.overlay" >> app/snippets/zmk-usb-logging/snippet.yml
+            echo "name: zmk-usb-logging" > zmk/app/snippets/zmk-usb-logging/snippet.yml
+            echo "append: " >> zmk/app/snippets/zmk-usb-logging/snippet.yml
+            echo "  - zmk-usb-logging.conf" >> zmk/app/snippets/zmk-usb-logging/snippet.yml
+            echo "  - zmk-usb-logging.overlay" >> zmk/app/snippets/zmk-usb-logging/snippet.yml
             
             # 创建配置文件
-            echo "CONFIG_ZMK_USB_LOGGING=y" > app/snippets/zmk-usb-logging/zmk-usb-logging.conf
+            echo "CONFIG_ZMK_USB_LOGGING=y" > zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.conf
             
             # 创建设备树覆盖文件
-            mkdir -p app/snippets/zmk-usb-logging
-            echo '\/' > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '{' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '    chosen {' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '        zephyr,console = &snippet_zmk_usb_logging_uart;' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '        zephyr,shell-uart = &snippet_zmk_usb_logging_uart;' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '    };' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '};' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '&zephyr_udc0 {' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '    snippet_zmk_usb_logging_uart: snippet_zmk_usb_logging_uart {' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '        compatible = "zephyr,cdc-acm-uart";' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '        label = "CDC_ACM_0";' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '    };' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
-            echo '};' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '/' > zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '{' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    chosen {' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        zephyr,console = &snippet_zmk_usb_logging_uart;' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        zephyr,shell-uart = &snippet_zmk_usb_logging_uart;' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    };' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '};' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '&zephyr_udc0 {' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    snippet_zmk_usb_logging_uart: snippet_zmk_usb_logging_uart {' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        compatible = "zephyr,cdc-acm-uart";' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        label = "CDC_ACM_0";' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    };' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '};' >> zmk/app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
           else
             echo "zmk-usb-logging snippet已存在"
           fi
 
           # 确保k30目录存在
-          mkdir -p app/boards/shields/k30
+          mkdir -p zmk/app/boards/shields/k30
 
           # 确保k30.conf包含必要的USB日志依赖配置
           if [ -f "app/boards/shields/k30/k30.conf" ]; then
@@ -178,38 +123,11 @@ EOF
             cat app/boards/shields/k30/k30.conf
           fi
 
-      - name: Build firmware with USB Logging
+      - name: Build firmware
         run: |
-          echo "开始构建启用USB日志的K30固件..."
-
-          # 动态查找app目录
-          APP_DIR=$(find . -name "CMakeLists.txt" -path "*/app/CMakeLists.txt" | xargs dirname)
-          if [ -z "$APP_DIR" ]; then
-            echo "Error: Could not find app directory with CMakeLists.txt"
-            exit 1
-          fi
-
-          echo "Building from: $APP_DIR"
-
-          # 使用相对路径进行构建
-          RELATIVE_APP_DIR=$(realpath --relative-to="$(pwd)" "$APP_DIR")
-
-          echo "构建命令: west build -b nrfmicro_13 -s $RELATIVE_APP_DIR -- -DSHIELD=k30 -S zmk-usb-logging"
-
-          # 显示Kconfig依赖关系以调试问题
-          west build -b nrfmicro_13 -s "$RELATIVE_APP_DIR" -- -DSHIELD=k30 -S zmk-usb-logging -t guiconfig || echo "Kconfig GUI不可用，继续构建..."
-
-          # 捕获错误并输出详细日志
-          west build -b nrfmicro_13 -s "$RELATIVE_APP_DIR" -- -DSHIELD=k30 -S zmk-usb-logging || {
-            echo "构建失败! 检查常见问题..."
-            find . -name "zephyr.log" -exec cat {} \;
-            # 显示最终的配置文件内容以调试
-            if [ -f "build/zephyr/.config" ]; then
-              echo "最终配置文件内容:"
-              grep -E "USB|LOG|SERIAL|CONSOLE" build/zephyr/.config
-            fi
-            exit 1
-          }
+          west build -b nrfmicro_13 -s zmk/app -- \
+            -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
+            -DSHIELD=k30
 
       - name: Verify Build Output
         run: |
@@ -246,10 +164,5 @@ EOF
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: k30-usb-logging-firmware-${{ github.sha }}
-          path: |
-            build/zephyr/zmk.uf2
-            build/zephyr/zmk.hex
-            build/zephyr/zephyr.bin
-          if-no-files-found: warn
-          retention-days: 14
+          name: k30-usb-logging-firmware
+          path: build/zephyr/zmk.uf2
