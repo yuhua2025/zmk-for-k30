@@ -27,15 +27,31 @@ jobs:
             ${{ runner.os }}-build-${{ env.cache-name }}-
             ${{ runner.os }}-build-
             ${{ runner.os }}-
-      - name: Initialize workspace (west init)
+      - name: 调试目录结构
         run: |
-          # 检查app目录是否存在west.yml
-          if [ -f "app/west.yml" ]; then
-            echo "在app目录中找到west.yml，使用当前目录初始化"
-            west init -l app
+          echo "当前目录结构："
+          find . -maxdepth 2 -type f -name "west.yml"
+          ls -la
+          echo "app目录内容："
+          ls -la app/ 2>/dev/null || echo "app目录不存在"
+      - name: 初始化workspace (west init)
+        run: |
+          # 首先查找项目中所有的west.yml文件
+          WEST_FILE=$(find . -name "west.yml" -type f 2>/dev/null | head -n 1)
+
+          if [ -n "$WEST_FILE" ]; then
+            # 如果找到west.yml，获取其目录路径
+            WEST_DIR=$(dirname "$WEST_FILE")
+            echo "找到west.yml文件在：$WEST_FILE"
+            echo "将使用目录：$WEST_DIR 进行初始化"
+            west init -l "$WEST_DIR"
           else
-            echo "在app目录中未找到west.yml，尝试直接初始化"
-            west init -l .
+            # 如果找不到west.yml，尝试常见位置
+            echo "未找到west.yml文件，尝试在app目录初始化"
+            mkdir -p app
+            cd app
+            west init -m https://github.com/zmkfirmware/zmk.git .
+            cd ..
           fi
       - name: Update modules (west update)
         run: west update --fetch-opt=--filter=tree:0
