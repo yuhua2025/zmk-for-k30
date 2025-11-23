@@ -57,11 +57,40 @@ jobs:
             
             # 6. 创建必要的CMakeLists.txt文件
             echo "# CMakeLists.txt for K30 shield\nadd_shield(k30)" > app/boards/shields/k30/CMakeLists.txt
+            
+            # 7. 创建shield.overlay文件（必需）
+            echo "/ {
+    chosen {
+        zmk,kscan = &kscan0;
+    };
+
+    kscan0: kscan_0 {
+        compatible = "zmk,kscan-matrix";\n        diode-direction = "col2row";\n        row-gpios = <&gpio0 29 GPIO_ACTIVE_LOW>;\n        col-gpios = <&gpio0 28 GPIO_ACTIVE_HIGH>;\n    };
+
+    leds {
+        compatible = "gpio-leds";\n    };
+};" > app/boards/shields/k30/k30.overlay
+            
+            # 8. 创建shield.dts文件（必需）
+            echo "/dts-v1/;\n#include <zephyr/dt-bindings/input/input-event-codes.h>\n#include <zephyr/dt-bindings/zmk/matrix_transform.h>\n#include "k30.dtsi"" > app/boards/shields/k30/k30.dts
           fi
 
           # 显示创建的文件，用于调试
           echo "创建的shield文件结构："
           ls -la app/boards/shields/k30/
+          
+          # 显示shield文件内容，用于详细调试
+          echo "\nKconfig.defconfig内容："
+          cat app/boards/shields/k30/Kconfig.defconfig
+          echo "\nKconfig.shield内容："
+          cat app/boards/shields/k30/Kconfig.shield
+          echo "\nCMakeLists.txt内容："
+          cat app/boards/shields/k30/CMakeLists.txt
+          
+          # 检查ZMK是否能识别到shield
+          echo "\n检查可用的shields："
+          cd app
+          west build -b nrfmicro_13 -t list-shields || echo "列出shields失败，但继续执行"
 
       - name: Configure USB Logging
         working-directory: zmk
