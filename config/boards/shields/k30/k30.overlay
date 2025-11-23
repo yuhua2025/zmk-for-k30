@@ -12,16 +12,13 @@
     zmk,matrix_transform = &default_transform;
     zmk,backlight = &backlight;
     zmk,battery = &vbatt;
+    zephyr,console = &cdc_acm_uart;
+    zephyr,shell-uart = &cdc_acm_uart;
     };
     
     /* USB CDC ACM配置，用于USB日志功能 */
     aliases {
         cdc-acm-0 = &cdc_acm_uart;
-    };
-    
-    chosen {
-        zephyr,console = &cdc_acm_uart;
-        zephyr,shell-uart = &cdc_acm_uart;
     };
     
     vbatt: vbatt {
@@ -102,8 +99,4 @@
 	};
 };
 
-/ { 
-	aliases {
-		cdc-acm-0 = &cdc_acm_uart;
-	};
-};
+
