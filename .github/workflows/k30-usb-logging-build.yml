@@ -6,45 +6,48 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: zmkfirmware/zmk-build-arm:stable
-      options: --user root
-
+      image: docker.io/zmkfirmware/zmk-build-arm:3.5
     steps:
-      - name: Checkout your repo (to get your k30 config)
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Clone and set up official ZMK
+        with:
+          persist-credentials: false
+      - name: Cache west modules
+        uses: actions/cache@v4
+        env:
+          cache-name: cache-zephyr-modules
+        with:
+          path: |
+            modules/
+            tools/
+            zephyr/
+            bootloader/
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('app/west.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+      - name: Initialize workspace (west init)
+        run: west init -l app
+      - name: Update modules (west update)
+        run: west update --fetch-opt=--filter=tree:0
+      - name: Export Zephyr CMake package (west zephyr-export)
+        run: west zephyr-export
+      - name: Check and create USB logging snippet
         run: |
-          # 1. 克隆官方 ZMK
-          git clone https://github.com/zmkfirmware/zmk.git && \
-          cd zmk && \
-
-          # 2. 初始化 West workspace using ZMK's app as manifest
-          west init -l app && \
-
-          # 3. 拉取所有依赖（zephyr, modules, etc.）
-          west update && \
-
-          # 4. 导出 Zephyr 环境
-          west zephyr-export && \
-
-          # 5. 注入你的 shield 配置
-          mkdir -p app/boards/shields/k30 && \
-          cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30"/* app/boards/shields/k30/ 2>/dev/null || echo "注意: 没有找到config目录，将使用默认配置" && \
-
-          # 6. 检查zmk-usb-logging snippet是否存在
+          # 确保zmk-usb-logging snippet存在
           if [ ! -d "app/snippets/zmk-usb-logging" ]; then
-            echo "创建zmk-usb-logging snippet目录" && \
-            mkdir -p app/snippets/zmk-usb-logging && \
+            echo "创建zmk-usb-logging snippet目录"
+            mkdir -p app/snippets/zmk-usb-logging
             
             # 创建snippet配置文件
-            echo "name: zmk-usb-logging" > app/snippets/zmk-usb-logging/snippet.yml && \
-            echo "append: " >> app/snippets/zmk-usb-logging/snippet.yml && \
-            echo "  - zmk-usb-logging.conf" >> app/snippets/zmk-usb-logging/snippet.yml && \
-            echo "  - zmk-usb-logging.overlay" >> app/snippets/zmk-usb-logging/snippet.yml && \
+            echo "name: zmk-usb-logging" > app/snippets/zmk-usb-logging/snippet.yml
+            echo "append: " >> app/snippets/zmk-usb-logging/snippet.yml
+            echo "  - zmk-usb-logging.conf" >> app/snippets/zmk-usb-logging/snippet.yml
+            echo "  - zmk-usb-logging.overlay" >> app/snippets/zmk-usb-logging/snippet.yml
             
             # 创建配置文件
-            echo "CONFIG_ZMK_USB_LOGGING=y" > app/snippets/zmk-usb-logging/zmk-usb-logging.conf && \
+            echo "CONFIG_ZMK_USB_LOGGING=y" > app/snippets/zmk-usb-logging/zmk-usb-logging.conf
             
             # 创建设备树覆盖文件
             cat > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay << 'EOVERLAY'
@@ -62,12 +65,20 @@ jobs:
                 };
             };
             EOVERLAY
-          fi && \
-
-          # 7. 确保k30.conf包含必要的USB日志依赖配置
+          else
+            echo "zmk-usb-logging snippet已存在"
+          fi
+          
+          # 确保k30目录存在
+          mkdir -p app/boards/shields/k30
+          
+          # 确保k30.conf包含必要的USB日志依赖配置
           if [ -f "app/boards/shields/k30/k30.conf" ]; then
-            echo "添加USB日志依赖配置到k30.conf" && \
-            cat >> app/boards/shields/k30/k30.conf << 'EOF'
+            echo "检查k30.conf是否已包含USB日志配置"
+            # 检查是否已包含配置
+            if ! grep -q "CONFIG_ZMK_USB_LOGGING" app/boards/shields/k30/k30.conf; then
+              echo "添加USB日志依赖配置到k30.conf"
+              cat >> app/boards/shields/k30/k30.conf << 'EOF'
 
 # USB日志记录配置 - 启用USB日志所需的所有依赖项
 CONFIG_LOG=y
@@ -79,32 +90,69 @@ CONFIG_USB_CDC_ACM=y
 CONFIG_UART_CONSOLE=y
 CONFIG_UART_INTERRUPT_DRIVEN=y
 EOF
-          fi && \
-          
-          # 确认所有配置已完成
-          echo "ZMK设置和配置完成"
+            else
+              echo "k30.conf已包含USB日志配置"
+            fi
+          else
+            echo "创建k30.conf并添加USB日志配置"
+            cat > app/boards/shields/k30/k30.conf << 'EOF'
+# USB日志记录配置 - 启用USB日志所需的所有依赖项
+CONFIG_LOG=y
+CONFIG_USB_DEVICE=y
+CONFIG_USB_DEVICE_STACK=y
+CONFIG_SERIAL_SUPPORT_INTERRUPT=y
+CONFIG_CONSOLE=y
+CONFIG_USB_CDC_ACM=y
+CONFIG_UART_CONSOLE=y
+CONFIG_UART_INTERRUPT_DRIVEN=y
+EOF
+          fi
 
       - name: Debug Information
-        working-directory: zmk
         run: |
           echo "工作目录: $(pwd)"
+          echo "列出根目录内容..."
+          ls -la
+          echo "检查app目录..."
+          ls -la app/ 2>/dev/null || echo "app目录不存在"
           echo "列出snippets目录内容..."
-          ls -la app/snippets/
+          ls -la app/snippets/ 2>/dev/null || echo "snippets目录不存在"
           echo "列出zmk-usb-logging目录内容..."
-          ls -la app/snippets/zmk-usb-logging/
+          ls -la app/snippets/zmk-usb-logging/ 2>/dev/null || echo "zmk-usb-logging snippet不存在"
+          echo "检查snippet配置文件..."
+          if [ -f "app/snippets/zmk-usb-logging/snippet.yml" ]; then
+            echo "snippet.yml内容:"
+            cat app/snippets/zmk-usb-logging/snippet.yml
+          fi
           echo "列出k30配置文件内容..."
           if [ -f "app/boards/shields/k30/k30.conf" ]; then
+            echo "k30.conf内容:"
             cat app/boards/shields/k30/k30.conf
           fi
 
       - name: Build firmware with USB Logging
-        working-directory: zmk
         run: |
           echo "开始构建启用USB日志的K30固件..."
-          echo "构建命令: west build -b nrfmicro_13 -s app -- -DSHIELD=k30 -S zmk-usb-logging"
+
+          # 动态查找app目录
+          APP_DIR=$(find . -name "CMakeLists.txt" -path "*/app/CMakeLists.txt" | xargs dirname)
+          if [ -z "$APP_DIR" ]; then
+            echo "Error: Could not find app directory with CMakeLists.txt"
+            exit 1
+          fi
+
+          echo "Building from: $APP_DIR"
+
+          # 使用相对路径进行构建
+          RELATIVE_APP_DIR=$(realpath --relative-to="$(pwd)" "$APP_DIR")
+
+          echo "构建命令: west build -b nrfmicro_13 -s $RELATIVE_APP_DIR -- -DSHIELD=k30 -S zmk-usb-logging"
+
+          # 显示Kconfig依赖关系以调试问题
+          west build -b nrfmicro_13 -s "$RELATIVE_APP_DIR" -- -DSHIELD=k30 -S zmk-usb-logging -t guiconfig || echo "Kconfig GUI不可用，继续构建..."
 
           # 捕获错误并输出详细日志
-          west build -b nrfmicro_13 -s app -- -DSHIELD=k30 -S zmk-usb-logging || {
+          west build -b nrfmicro_13 -s "$RELATIVE_APP_DIR" -- -DSHIELD=k30 -S zmk-usb-logging || {
             echo "构建失败! 检查常见问题..."
             find . -name "zephyr.log" -exec cat {} \;
             # 显示最终的配置文件内容以调试
@@ -116,7 +164,6 @@ EOF
           }
 
       - name: Verify Build Output
-        working-directory: zmk
         run: |
           echo "检查构建输出..."
           # 查找所有可能的固件文件位置
@@ -153,8 +200,8 @@ EOF
         with:
           name: k30-usb-logging-firmware-${{ github.sha }}
           path: |
-            zmk/build/zephyr/zmk.uf2
-            zmk/build/zephyr/zmk.hex
-            zmk/build/zephyr/zephyr.bin
+            build/zephyr/zmk.uf2
+            build/zephyr/zmk.hex
+            build/zephyr/zephyr.bin
           if-no-files-found: warn
           retention-days: 14
