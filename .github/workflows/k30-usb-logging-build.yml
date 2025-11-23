@@ -68,41 +68,37 @@ jobs:
           else
             echo "zmk-usb-logging snippet已存在"
           fi
-          
+
           # 确保k30目录存在
           mkdir -p app/boards/shields/k30
-          
+
           # 确保k30.conf包含必要的USB日志依赖配置
           if [ -f "app/boards/shields/k30/k30.conf" ]; then
             echo "检查k30.conf是否已包含USB日志配置"
             # 检查是否已包含配置
             if ! grep -q "CONFIG_ZMK_USB_LOGGING" app/boards/shields/k30/k30.conf; then
               echo "添加USB日志依赖配置到k30.conf"
-              cat >> app/boards/shields/k30/k30.conf << 'EOF'
-CONFIG_LOG=y
-CONFIG_USB_DEVICE=y
-CONFIG_USB_DEVICE_STACK=y
-CONFIG_SERIAL_SUPPORT_INTERRUPT=y
-CONFIG_CONSOLE=y
-CONFIG_USB_CDC_ACM=y
-CONFIG_UART_CONSOLE=y
-CONFIG_UART_INTERRUPT_DRIVEN=y
-EOF
+              echo 'CONFIG_LOG=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_USB_DEVICE=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_USB_DEVICE_STACK=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_SERIAL_SUPPORT_INTERRUPT=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_CONSOLE=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_USB_CDC_ACM=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_UART_CONSOLE=y' >> app/boards/shields/k30/k30.conf
+              echo 'CONFIG_UART_INTERRUPT_DRIVEN=y' >> app/boards/shields/k30/k30.conf
             else
               echo "k30.conf已包含USB日志配置"
             fi
           else
             echo "创建k30.conf并添加USB日志配置"
-            cat > app/boards/shields/k30/k30.conf << 'EOF'
-CONFIG_LOG=y
-CONFIG_USB_DEVICE=y
-CONFIG_USB_DEVICE_STACK=y
-CONFIG_SERIAL_SUPPORT_INTERRUPT=y
-CONFIG_CONSOLE=y
-CONFIG_USB_CDC_ACM=y
-CONFIG_UART_CONSOLE=y
-CONFIG_UART_INTERRUPT_DRIVEN=y
-EOF
+            echo 'CONFIG_LOG=y' > app/boards/shields/k30/k30.conf
+            echo 'CONFIG_USB_DEVICE=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_USB_DEVICE_STACK=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_SERIAL_SUPPORT_INTERRUPT=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_CONSOLE=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_USB_CDC_ACM=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_UART_CONSOLE=y' >> app/boards/shields/k30/k30.conf
+            echo 'CONFIG_UART_INTERRUPT_DRIVEN=y' >> app/boards/shields/k30/k30.conf
           fi
 
       - name: Debug Information
