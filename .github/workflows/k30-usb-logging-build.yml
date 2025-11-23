@@ -79,8 +79,6 @@ jobs:
             if ! grep -q "CONFIG_ZMK_USB_LOGGING" app/boards/shields/k30/k30.conf; then
               echo "添加USB日志依赖配置到k30.conf"
               cat >> app/boards/shields/k30/k30.conf << 'EOF'
-
-# USB日志记录配置 - 启用USB日志所需的所有依赖项
 CONFIG_LOG=y
 CONFIG_USB_DEVICE=y
 CONFIG_USB_DEVICE_STACK=y
@@ -96,7 +94,6 @@ EOF
           else
             echo "创建k30.conf并添加USB日志配置"
             cat > app/boards/shields/k30/k30.conf << 'EOF'
-# USB日志记录配置 - 启用USB日志所需的所有依赖项
 CONFIG_LOG=y
 CONFIG_USB_DEVICE=y
 CONFIG_USB_DEVICE_STACK=y
