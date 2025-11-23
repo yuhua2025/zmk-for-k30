@@ -36,25 +36,53 @@ jobs:
           ls -la app/ 2>/dev/null || echo "app目录不存在"
       - name: 初始化workspace (west init)
         run: |
-          # 根据GitHub仓库结构，首先尝试根目录初始化
+          # 清理可能存在的失败初始化
+          if [ -d ".west" ]; then
+            echo "清理之前可能失败的初始化..."
+            rm -rf .west
+          fi
+          
+          # 检查和显示目录结构
+          echo "详细检查目录结构："
+          find . -type f -name "west.yml"
+          echo "配置目录内容："
+          ls -la config/ 2>/dev/null || echo "config目录不存在"
+          
+          # 优先检查根目录west.yml
           if [ -f "west.yml" ]; then
             echo "在根目录中找到west.yml，直接使用当前目录初始化"
             west init -l .
+          # 检查app目录
           elif [ -f "app/west.yml" ]; then
             echo "在app目录中找到west.yml，使用app目录初始化"
             west init -l app
+          # 检查config目录（根据GitHub仓库结构）
+          elif [ -f "config/west.yml" ]; then
+            echo "在config目录中找到west.yml，使用config目录初始化"
+            west init -l config
           else
-            # 作为备选方案，尝试查找项目中所有的west.yml文件
-            WEST_FILE=$(find . -name "west.yml" -type f 2>/dev/null | head -n 1)
-            if [ -n "$WEST_FILE" ]; then
-              WEST_DIR=$(dirname "$WEST_FILE")
-              echo "找到west.yml文件在：$WEST_FILE"
-              echo "将使用目录：$WEST_DIR 进行初始化"
-              west init -l "$WEST_DIR"
-            else
-              echo "未找到west.yml文件，尝试在根目录直接初始化"
-              west init -m https://github.com/zmkfirmware/zmk.git .
-            fi
+            # 查找项目中所有的west.yml文件
+            echo "尝试搜索所有可能的west.yml文件..."
+            find . -type f -name "west.yml" -exec echo "找到: {}" \;
+            
+            # 作为备选方案，使用当前项目作为manifest
+            echo "未找到west.yml文件，尝试使用当前目录作为基础初始化"
+            # 创建基本的west.yml文件
+            cat > west.yml << 'EOF'
+manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+  projects:
+    - name: zmk
+      remote: zmkfirmware
+      revision: main
+      import: app/west.yml
+  self:
+    path: .
+EOF
+            echo "创建了基础west.yml文件，现在初始化..."
+            west init -l .
           fi
       - name: Update modules (west update)
         run: west update --fetch-opt=--filter=tree:0
