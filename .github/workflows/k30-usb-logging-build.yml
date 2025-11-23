@@ -36,14 +36,32 @@ jobs:
             echo "找到现有k30配置，正在复制..."
             cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30"/* app/boards/shields/k30/
           else
-            echo "未找到现有k30配置，创建基本配置..."
-            # 创建基本的k30.conf文件
+            echo "未找到现有k30配置，创建完整的shield配置..."
+            # 创建shield目录
+            mkdir -p app/boards/shields/k30
+            
+            # 1. 创建Kconfig.defconfig文件（shield必需）
+            echo "# K30 Shield Configuration\nconfig SHIELD_K30\n    bool \"Enable K30 keyboard shield\"\n    depends on BOARD_NRFMICRO_13\n    help\n      Enable support for the K30 keyboard shield." > app/boards/shields/k30/Kconfig.defconfig
+            
+            # 2. 创建Kconfig.shield文件（shield必需）
+            echo "# K30 Shield Configuration\nconfig SHIELD_K30\n    def_bool $(shields_list_contains,k30)" > app/boards/shields/k30/Kconfig.shield
+            
+            # 3. 创建基本的k30.conf文件
             echo "# K30键盘配置" > app/boards/shields/k30/k30.conf
-            # 创建基本的k30.keymap文件
+            
+            # 4. 创建基本的k30.keymap文件
             echo "/ {\n    keymap {\n        compatible = \"zmk,keymap\";\n        default_layer {\n            bindings = <\&kp ESC>;\n        };\n    };\n};" > app/boards/shields/k30/k30.keymap
-            # 创建基本的k30.dtsi文件
-            echo "#include <dt-bindings/zmk/matrix_transform.h>\n\n/ {\n    keymap {\n        compatible = \"zmk,keymap\"\n    };\n};\n\n&pro_micro_i2c {\n    status = \"okay\";\n};\n\n&pro_micro_spi {\n    status = \"okay\";\n};\n\n&spi0 {\n    status = \"okay\";\n};\n\n&spi1 {\n    status = \"okay\";\n};" > app/boards/shields/k30/k30.dtsi
+            
+            # 5. 创建正确的k30.dtsi文件，修复语法错误
+            echo "#include <dt-bindings/zmk/matrix_transform.h>\n\n/ {\n    chosen {\n        zmk,matrix-transform = <&matrix_transform>;\n    };\n    \n    matrix_transform: matrix_transform {\n        compatible = \"zmk,matrix-transform\";\n        columns = <1>;\n        rows = <1>;\n        map = <RC(0,0)>;\n    };\n};\n\n&pro_micro_i2c {\n    status = \"okay\";\n};\n\n&pro_micro_spi {\n    status = \"okay\";\n};\n\n&spi0 {\n    status = \"okay\";\n};\n\n&spi1 {\n    status = \"okay\";\n};" > app/boards/shields/k30/k30.dtsi
+            
+            # 6. 创建必要的CMakeLists.txt文件
+            echo "# CMakeLists.txt for K30 shield\nadd_shield(k30)" > app/boards/shields/k30/CMakeLists.txt
           fi
+
+          # 显示创建的文件，用于调试
+          echo "创建的shield文件结构："
+          ls -la app/boards/shields/k30/
 
       - name: Configure USB Logging
         working-directory: zmk
