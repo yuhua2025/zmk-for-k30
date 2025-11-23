@@ -50,21 +50,21 @@ jobs:
             echo "CONFIG_ZMK_USB_LOGGING=y" > app/snippets/zmk-usb-logging/zmk-usb-logging.conf
             
             # 创建设备树覆盖文件
-            cat > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay << 'EOVERLAY'
-            / {
-                chosen {
-                    zephyr,console = &snippet_zmk_usb_logging_uart;
-                    zephyr,shell-uart = &snippet_zmk_usb_logging_uart;
-                };
-            };
-
-            &zephyr_udc0 {
-                snippet_zmk_usb_logging_uart: snippet_zmk_usb_logging_uart {
-                    compatible = "zephyr,cdc-acm-uart";
-                    label = "CDC_ACM_0";
-                };
-            };
-EOVERLAY
+            mkdir -p app/snippets/zmk-usb-logging
+            echo '\/' > app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '{' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    chosen {' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        zephyr,console = &snippet_zmk_usb_logging_uart;' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        zephyr,shell-uart = &snippet_zmk_usb_logging_uart;' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    };' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '};' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '&zephyr_udc0 {' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    snippet_zmk_usb_logging_uart: snippet_zmk_usb_logging_uart {' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        compatible = "zephyr,cdc-acm-uart";' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '        label = "CDC_ACM_0";' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '    };' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
+            echo '};' >> app/snippets/zmk-usb-logging/zmk-usb-logging.overlay
           else
             echo "zmk-usb-logging snippet已存在"
           fi
