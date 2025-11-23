@@ -132,15 +132,40 @@ jobs:
 
       - name: Build firmware
         run: |
-          # 检查目录结构，确认正确的app路径
-          echo "检查app目录位置..."
-          ls -la app/ 2>/dev/null || echo "app目录不存在"
-          ls -la app/CMakeLists.txt 2>/dev/null || echo "app/CMakeLists.txt不存在"
+          # 添加详细的目录结构检查
+          echo "=== 当前工作目录 ==="
+          pwd
 
-          # 使用正确的app目录路径进行构建
-          west build -b nrfmicro_13 -s app -- \
-            -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
-            -DSHIELD=k30
+          echo "=== 根目录结构 ==="
+          ls -la
+
+          echo "=== app目录详细内容 ==="
+          ls -la app/
+
+          # 查找所有CMakeLists.txt文件
+          echo "=== 查找所有CMakeLists.txt文件 ==="
+          find . -name "CMakeLists.txt"
+
+          # 查找正确的west.yml文件位置
+          echo "=== 查找west.yml文件 ==="
+          find . -name "west.yml"
+
+          # 尝试使用正确的app路径进行构建
+          # 检查根目录下是否有app文件夹和CMakeLists.txt
+          if [ -f "CMakeLists.txt" ]; then
+            echo "在根目录找到CMakeLists.txt，使用根目录作为构建源"
+            west build -b nrfmicro_13 -s . -- \
+              -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
+              -DSHIELD=k30
+          elif [ -f "zmk/app/CMakeLists.txt" ]; then
+            echo "在zmk/app找到CMakeLists.txt，使用zmk/app作为构建源"
+            west build -b nrfmicro_13 -s zmk/app -- \
+              -DZMK_CONFIG="$GITHUB_WORKSPACE/config" \
+              -DSHIELD=k30
+          else
+            echo "无法找到合适的CMakeLists.txt文件，请检查项目结构"
+            exit 1
+          fi
 
       - name: Verify Build Output
         run: |
