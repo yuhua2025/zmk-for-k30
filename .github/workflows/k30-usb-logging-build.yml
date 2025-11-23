@@ -64,7 +64,7 @@ jobs:
                     label = "CDC_ACM_0";
                 };
             };
-            EOVERLAY
+EOVERLAY
           else
             echo "zmk-usb-logging snippet已存在"
           fi
