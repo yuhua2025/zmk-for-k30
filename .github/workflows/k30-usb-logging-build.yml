@@ -172,7 +172,8 @@ jobs:
           echo "环境变量预览:"
           echo "  GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
           echo "  CI=${CI}"
-          echo "  PATH前100字符: ${PATH:0:100}..."
+          # 使用更兼容的shell语法显示PATH的前100个字符
+          echo "  PATH前100字符: $(echo "$PATH" | cut -c1-100)..."
 
           # 2. 根目录结构详细检查
           echo "\n=== 根目录结构 ==="
@@ -197,8 +198,8 @@ jobs:
 
           # 4. 检查所有可能的应用目录
           echo "\n=== 应用目录检查 ==="
-          APP_DIRS=("app" "src" "zephyr/samples" "zmk/app")
-          for dir in "${APP_DIRS[@]}"; do
+          # 使用标准shell兼容的方式检查多个目录
+          for dir in app src "zephyr/samples" "zmk/app"; do
             if [ -d "$dir" ]; then
               echo "$dir目录存在，内容:" 
               ls -la "$dir" || echo "无法列出$dir目录内容"
@@ -239,8 +240,8 @@ jobs:
 
           # 6. 检查所有可能的snippet位置
           echo "\n=== 多位置Snippet检查 ==="
-          SNIPPET_LOCATIONS=("config/snippets/zmk-usb-logging" "app/snippets/zmk-usb-logging" "zmk/app/snippets/zmk-usb-logging")
-          for loc in "${SNIPPET_LOCATIONS[@]}"; do
+          # 使用标准shell兼容的方式检查多个snippet位置
+          for loc in "config/snippets/zmk-usb-logging" "app/snippets/zmk-usb-logging" "zmk/app/snippets/zmk-usb-logging"; do
             if [ -d "$loc" ]; then
               echo "$loc存在，关键文件:"
               [ -f "$loc/snippet.yml" ] && echo "  - $loc/snippet.yml存在"
@@ -253,8 +254,8 @@ jobs:
 
           # 7. K30配置文件多位置检查
           echo "\n=== K30配置文件检查 ==="
-          K30_CONF_LOCATIONS=("config/boards/shields/k30/k30.conf" "app/boards/shields/k30/k30.conf" "zmk/app/boards/shields/k30/k30.conf")
-          for loc in "${K30_CONF_LOCATIONS[@]}"; do
+          # 使用标准shell兼容的方式检查多个配置文件位置
+          for loc in "config/boards/shields/k30/k30.conf" "app/boards/shields/k30/k30.conf" "zmk/app/boards/shields/k30/k30.conf"; do
             if [ -f "$loc" ]; then
               echo "$loc存在，内容预览:" 
               cat "$loc" || echo "无法读取k30.conf内容"
