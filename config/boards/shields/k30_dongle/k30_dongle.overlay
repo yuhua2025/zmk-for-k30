@@ -3,20 +3,20 @@
  *
  * SPDX-License-Identifier: MIT
  */
-
 #include <dt-bindings/zmk/matrix_transform.h>
 
 / {
 	chosen {
 		zmk,kscan = &mock_kscan;
 		zmk,matrix_transform = &default_transform;
+		zmk,display = &oled;
 	};
 
 	mock_kscan: mock_kscan_0 {
 		compatible = "zmk,kscan-mock";
-		columns = <4>;      /* 改成实际的列数 */
-		rows = <6>;         /* 改成实际的行数 */
-		events = <22>;      /* 实际的按键总数 */
+		columns = <4>;
+		rows = <6>;
+		events = <22>;
 	};
 
 	default_transform: keymap_transform_0 {
@@ -31,5 +31,24 @@
 		RC(4,0) RC(4,1) RC(4,2) RC(4,3)
 		RC(5,0) RC(5,1)
 		>;
+	};
+};
+
+&pro_micro_i2c {
+	status = "okay";
+
+	oled: ssd1306@3c {
+		compatible = "solomon,ssd1306fb";
+		reg = <0x3c>;
+		width = <128>;
+		height = <32>;
+		segment-offset = <0>;
+		page-offset = <0>;
+		display-offset = <0>;
+		multiplex-ratio = <31>;
+		segment-remap;
+		com-invdir;
+		inversion-on;
+		prechargep = <0x22>;
 	};
 };
