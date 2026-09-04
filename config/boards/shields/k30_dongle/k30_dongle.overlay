@@ -14,9 +14,9 @@
 
 	mock_kscan: mock_kscan_0 {
 		compatible = "zmk,kscan-mock";
-		columns = <0>;
-		rows = <0>;
-		events = <0>;
+		columns = <4>;      /* 改成实际的列数 */
+		rows = <6>;         /* 改成实际的行数 */
+		events = <22>;      /* 实际的按键总数 */
 	};
 
 	default_transform: keymap_transform_0 {
