@@ -1,45 +1,60 @@
-name: Build K30 Keyboard - Full Firmware
-
+name: Build K30 Keyboard + Dongle Firmware
 on: [push, pull_request, workflow_dispatch]
-
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
       image: zmkfirmware/zmk-build-arm:stable
       options: --user root
-
     steps:
-      - name: Checkout your repo (to get your k30 config)
+      - name: Checkout your repo (to get your config)
         uses: actions/checkout@v4
 
-      - name: Clone and set up official ZMK
+      - name: Clone and set up official ZMK (v0.3.0)
         run: |
-          # 1. 克隆官方 ZMK
-          git clone https://github.com/zmkfirmware/zmk.git
+          # 1. 克隆指定版本的 ZMK（v0.3.0，兼容 nrfmicro_13）
+          git clone --branch v0.3.0 --depth 1 https://github.com/zmkfirmware/zmk.git
           cd zmk
-
-          # 2. 初始化 West workspace using ZMK's app as manifest
+          # 2. 初始化 West workspace
           west init -l app
-
-          # 3. 拉取所有依赖（zephyr, modules, etc.）
+          # 3. 拉取所有依赖
           west update
-
           # 4. 导出 Zephyr 环境
           west zephyr-export
-
-          # 5. 注入你的 shield 配置
+          # 5. 注入你的键盘配置
           mkdir -p app/boards/shields/k30
           cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30"/* app/boards/shields/k30/
+          # 6. 注入你的 Dongle 配置
+          mkdir -p app/boards/shields/k30_dongle
+          cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30_dongle"/* app/boards/shields/k30_dongle/
 
-      - name: Build firmware
+      # ========== 编译1：键盘（外设模式，配合Dongle使用）==========
+      - name: Build k30 (peripheral mode)
         working-directory: zmk
         run: |
-          # 配置文件中已启用USB日志功能
-          west build -b nrfmicro_13 -s app -- -DSHIELD=k30
+          west build -p -b nrfmicro_13 -s app -- -DSHIELD=k30 -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
+          cp build/zephyr/zmk.uf2 build/zephyr/k30_peripheral.uf2
 
-      - name: Upload firmware
+      # ========== 编译2：Dongle（中心模式）==========
+      - name: Build k30_dongle (central mode)
+        working-directory: zmk
+        run: |
+          west build -p -b nrfmicro_13 -s app -- -DSHIELD=k30_dongle
+          cp build/zephyr/zmk.uf2 build/zephyr/k30_dongle.uf2
+
+      # ========== 编译3：settings_reset（清除配对）==========
+      - name: Build settings_reset
+        working-directory: zmk
+        run: |
+          west build -p -b nrfmicro_13 -s app -- -DSHIELD=settings_reset
+          cp build/zephyr/zmk.uf2 build/zephyr/settings_reset.uf2
+
+      # ========== 上传所有固件 ==========
+      - name: Upload all firmware
         uses: actions/upload-artifact@v4
         with:
-          name: k30-full-firmware
-          path: zmk/build/zephyr/zmk.uf2
+          name: k30-dongle-firmware
+          path: |
+            zmk/build/zephyr/k30_peripheral.uf2
+            zmk/build/zephyr/k30_dongle.uf2
+            zmk/build/zephyr/settings_reset.uf2
