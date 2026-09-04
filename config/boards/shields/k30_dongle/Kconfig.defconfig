@@ -1,0 +1,26 @@
+# Copyright (c) 2020 The ZMK Contributors
+# SPDX-License-Identifier: MIT
+
+if SHIELD_K30_DONGLE
+
+config ZMK_KEYBOARD_NAME
+	default "Dayu k30 Dongle"
+
+config ZMK_SPLIT_ROLE_CENTRAL
+	default y
+
+config ZMK_SPLIT
+	default y
+
+# 外设数量 - 单体键盘设为1
+config ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS
+	default 1
+
+# 外设数(1) + 蓝牙profile数(5) = 6
+config BT_MAX_CONN
+	default 6
+
+config BT_MAX_PAIRED
+	default 6
+
+endif
