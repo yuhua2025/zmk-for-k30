@@ -28,33 +28,33 @@ jobs:
           mkdir -p app/boards/shields/k30_dongle
           cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30_dongle"/* app/boards/shields/k30_dongle/
 
-      # ========== 编译1：键盘（外设模式，配合Dongle使用）==========
+      # ========== 编译1：键盘（外设模式）==========
       - name: Build k30 (peripheral mode)
         working-directory: zmk
         run: |
-          west build -p -b nrfmicro_13 -s app -- -DSHIELD=k30 -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
-          cp build/zephyr/zmk.uf2 build/zephyr/k30_peripheral.uf2
+          west build -b nrfmicro_13 -s app -d build_peripheral -- -DSHIELD=k30 -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
+          mkdir -p output
+          cp build_peripheral/zephyr/zmk.uf2 output/k30_peripheral.uf2
 
       # ========== 编译2：Dongle（中心模式）==========
       - name: Build k30_dongle (central mode)
         working-directory: zmk
         run: |
-          west build -p -b nrfmicro_13 -s app -- -DSHIELD=k30_dongle
-          cp build/zephyr/zmk.uf2 build/zephyr/k30_dongle.uf2
+          west build -b nrfmicro_13 -s app -d build_dongle -- -DSHIELD=k30_dongle
+          mkdir -p output
+          cp build_dongle/zephyr/zmk.uf2 output/k30_dongle.uf2
 
       # ========== 编译3：settings_reset（清除配对）==========
       - name: Build settings_reset
         working-directory: zmk
         run: |
-          west build -p -b nrfmicro_13 -s app -- -DSHIELD=settings_reset
-          cp build/zephyr/zmk.uf2 build/zephyr/settings_reset.uf2
+          west build -b nrfmicro_13 -s app -d build_reset -- -DSHIELD=settings_reset
+          mkdir -p output
+          cp build_reset/zephyr/zmk.uf2 output/settings_reset.uf2
 
       # ========== 上传所有固件 ==========
       - name: Upload all firmware
         uses: actions/upload-artifact@v4
         with:
           name: k30-dongle-firmware
-          path: |
-            zmk/build/zephyr/k30_peripheral.uf2
-            zmk/build/zephyr/k30_dongle.uf2
-            zmk/build/zephyr/settings_reset.uf2
+          path: zmk/output/*.uf2
