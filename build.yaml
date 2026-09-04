@@ -7,12 +7,23 @@
 # board: [ "nice_nano_v2" ]
 # shield: [ "corne_left", "corne_right" ]
 #include:
-#  - board: bdn9_rev2
-#  - board: nice_nano_v2
-#    shield: reviung41
+# - board: bdn9_rev2
+# - board: nice_nano_v2
+#   shield: reviung41
 #
 ---
+
 include:
+  # ==================== 键盘端（外设模式，配合Dongle使用）====================
   - board: nrfmicro_13
     shield: k30
+    cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
+
+  # ==================== Dongle 端（中心模式，插电脑USB）====================
+  - board: nrfmicro_13
+    shield: k30_dongle
     snippet: zmk-usb-logging
+
+  # ==================== settings_reset（清除配对用，两块板都要刷）====================
+  - board: nrfmicro_13
+    shield: settings_reset
