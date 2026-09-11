@@ -36,14 +36,14 @@
 };
 
 &pinctrl {
-	i2c0_default: i2c0_default {
+	k30_dongle_i2c: k30_dongle_i2c {
 		group1 {
 			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
 			bias-pull-up;
 		};
 	};
-	i2c0_sleep: i2c0_sleep {
+	k30_dongle_i2c_sleep: k30_dongle_i2c_sleep {
 		group1 {
 			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
@@ -53,7 +53,13 @@
 };
 
 &i2c0 {
+	/delete-property/ compatible;
+	compatible = "nordic,nrf-twim";
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
 	status = "okay";
+	pinctrl-0 = <&k30_dongle_i2c>;
+	pinctrl-1 = <&k30_dongle_i2c_sleep>;
 	clock-frequency = <I2C_BITRATE_STANDARD>;
 
 	oled: ssd1306@3c {
