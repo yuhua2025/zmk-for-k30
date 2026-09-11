@@ -45,22 +45,17 @@
 	};
 	k30_dongle_i2c_sleep: k30_dongle_i2c_sleep {
 		group1 {
-			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
-				<NRF_PSEL(TWIM_SCL, 0, 17)>;
-			low-power-enable;
+			psels = <NRF_PSEL(DISCONNECTED, 0, 20)>,
+				<NRF_PSEL(DISCONNECTED, 0, 17)>;
 		};
 	};
 };
 
 &i2c0 {
-	/delete-property/ compatible;
-	compatible = "nordic,nrf-twim";
-	/delete-property/ pinctrl-0;
-	/delete-property/ pinctrl-1;
 	status = "okay";
 	pinctrl-0 = <&k30_dongle_i2c>;
 	pinctrl-1 = <&k30_dongle_i2c_sleep>;
-	clock-frequency = <I2C_BITRATE_STANDARD>;
+	zephyr,concat-buf-size = <1024>;
 
 	oled: ssd1306@3c {
 		compatible = "solomon,ssd1306fb";
@@ -71,6 +66,9 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
+		segment-remap;
+		com-invdir;
+		com-sequential;
 		prechargep = <0x22>;
 	};
 };
