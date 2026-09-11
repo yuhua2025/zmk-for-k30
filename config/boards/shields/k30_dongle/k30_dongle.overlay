@@ -5,6 +5,7 @@
  */
 #include <dt-bindings/zmk/matrix_transform.h>
 #include <dt-bindings/i2c/i2c.h>
+#include <nordic/nrf52840_qiaa.dtsi>
 
 / {
 	chosen {
@@ -40,13 +41,14 @@
 		group1 {
 			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
-			low-power-enable;
+			bias-pull-up;
 		};
 	};
 	k30_dongle_i2c_sleep: k30_dongle_i2c_sleep {
 		group1 {
-			psels = <NRF_PSEL(DISCONNECTED, 0, 20)>,
-				<NRF_PSEL(DISCONNECTED, 0, 17)>;
+			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
+				<NRF_PSEL(TWIM_SCL, 0, 17)>;
+			low-power-enable;
 		};
 	};
 };
