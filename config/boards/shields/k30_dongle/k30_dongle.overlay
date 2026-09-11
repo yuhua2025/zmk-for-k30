@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include <dt-bindings/zmk/matrix_transform.h>
+#include <dt-bindings/i2c/i2c.h>
 #include <dt-bindings/pinctrl/nrf-pinctrl.h>
 
 / {
@@ -35,24 +36,28 @@
 	};
 };
 
-&i2c0_default {
-	group1 {
-		psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
-			<NRF_PSEL(TWIM_SCL, 0, 17)>;
-		bias-pull-up;
+&pinctrl {
+	k30_i2c_default: k30_i2c_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
+				<NRF_PSEL(TWIM_SCL, 0, 17)>;
+			bias-pull-up;
+		};
 	};
-};
-
-&i2c0_sleep {
-	group1 {
-		psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
-			<NRF_PSEL(TWIM_SCL, 0, 17)>;
-		low-power-enable;
+	k30_i2c_sleep: k30_i2c_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
+				<NRF_PSEL(TWIM_SCL, 0, 17)>;
+			low-power-enable;
+		};
 	};
 };
 
 &i2c0 {
 	status = "okay";
+	pinctrl-0 = <&k30_i2c_default>;
+	pinctrl-1 = <&k30_i2c_sleep>;
+	clock-frequency = <I2C_BITRATE_STANDARD>;
 
 	oled: ssd1306@3c {
 		compatible = "solomon,ssd1306fb";
