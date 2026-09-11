@@ -35,7 +35,7 @@ jobs:
         working-directory: zmk
         run: |
           KCONF=app/boards/shields/k30_dongle/Kconfig.defconfig
-          printf '\nif ZMK_DISPLAY\n\nconfig I2C\n\tdefault y\n\nconfig SSD1306\n\tdefault y\n\nconfig ZMK_DISPLAY_STATUS_SCREEN\n\tdefault y\n\nconfig ZMK_DISPLAY_STATUS_SCREEN_BUILT_IN\n\tdefault y\n\nconfig LV_Z_MEM_POOL_SIZE\n\tdefault 8192\n\nendif # ZMK_DISPLAY\n\nif LVGL\n\nconfig LV_Z_VDB_SIZE\n\tdefault 64\n\nconfig LV_DPI_DEF\n\tdefault 148\n\nconfig LV_Z_BITS_PER_PIXEL\n\tdefault 1\n\nchoice LV_COLOR_DEPTH\n\tdefault LV_COLOR_DEPTH_1\nendchoice\n\nendif # LVGL\n' >> "$KCONF"
+          printf '\nif SHIELD_K30_DONGLE\n\nif ZMK_DISPLAY\n\nconfig I2C\n\tdefault y\n\nconfig SSD1306\n\tdefault y\n\nconfig LV_Z_MEM_POOL_SIZE\n\tdefault 8192\n\nendif # ZMK_DISPLAY\n\nif LVGL\n\nconfig LV_Z_VDB_SIZE\n\tdefault 64\n\nconfig LV_DPI_DEF\n\tdefault 148\n\nconfig LV_Z_BITS_PER_PIXEL\n\tdefault 1\n\nchoice LV_COLOR_DEPTH\n\tdefault LV_COLOR_DEPTH_1\nendchoice\n\nendif # LVGL\n\nendif # SHIELD_K30_DONGLE\n' >> "$KCONF"
           echo "=== Patched Kconfig.defconfig ==="
           cat "$KCONF"
 
@@ -43,7 +43,7 @@ jobs:
         working-directory: zmk
         run: |
           CONF=app/boards/shields/k30_dongle/k30_dongle.conf
-          printf '\n# Display fixes\nCONFIG_ZMK_DISPLAY_WORK_QUEUE_DEDICATED=y\nCONFIG_ZMK_DISPLAY_DEDICATED_THREAD_STACK_SIZE=4096\nCONFIG_MAIN_STACK_SIZE=2048\nCONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048\nCONFIG_ZMK_DISPLAY_BLANK_ON_IDLE=n\n' >> "$CONF"
+          printf '\n# Display fixes\nCONFIG_ZMK_DISPLAY_STATUS_SCREEN_BUILT_IN=y\nCONFIG_ZMK_DISPLAY_WORK_QUEUE_DEDICATED=y\nCONFIG_ZMK_DISPLAY_DEDICATED_THREAD_STACK_SIZE=4096\nCONFIG_MAIN_STACK_SIZE=2048\nCONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048\nCONFIG_ZMK_DISPLAY_BLANK_ON_IDLE=n\n' >> "$CONF"
           echo "=== Patched conf ==="
           cat $CONF
 
