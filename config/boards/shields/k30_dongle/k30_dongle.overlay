@@ -39,14 +39,14 @@
 &pinctrl {
 	k30_i2c_default: k30_i2c_default {
 		group1 {
-			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
+			psels = <NRF_PSEL(TWIM_SDA, 0, 2)>,
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
 			bias-pull-up;
 		};
 	};
 	k30_i2c_sleep: k30_i2c_sleep {
 		group1 {
-			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
+			psels = <NRF_PSEL(TWIM_SDA, 0, 2)>,
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
 			low-power-enable;
 		};
