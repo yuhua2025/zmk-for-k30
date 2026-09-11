@@ -27,6 +27,8 @@ jobs:
           # 6. 注入你的 Dongle 配置
           mkdir -p app/boards/shields/k30_dongle
           cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30_dongle"/* app/boards/shields/k30_dongle/
+          # 7. 修改板子 pinctrl，把 I2C SDA 从 P0.15 改成 P0.20
+          sed -i 's/TWIM_SDA, 0, 15/TWIM_SDA, 0, 20/g' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
 
       # ========== 编译1：键盘（外设模式）==========
       - name: Build k30 (peripheral mode)
