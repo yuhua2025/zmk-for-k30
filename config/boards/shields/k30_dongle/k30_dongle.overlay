@@ -42,22 +42,30 @@
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
 		};
 	};
+	k30_i2c_sleep: k30_i2c_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
+				<NRF_PSEL(TWIM_SCL, 0, 17)>;
+			low-power-enable;
+		};
+	};
 };
 
 &i2c0 {
 	status = "okay";
 	pinctrl-0 = <&k30_i2c>;
+	pinctrl-1 = <&k30_i2c_sleep>;
 	clock-frequency = <I2C_BITRATE_STANDARD>;
 
 	oled: ssd1306@3c {
 		compatible = "solomon,ssd1306fb";
 		reg = <0x3c>;
 		width = <128>;
-		height = <64>;
+		height = <32>;
 		segment-offset = <0>;
 		page-offset = <0>;
 		display-offset = <0>;
-		multiplex-ratio = <63>;
+		multiplex-ratio = <31>;
 		segment-remap;
 		com-invdir;
 		prechargep = <0x22>;
