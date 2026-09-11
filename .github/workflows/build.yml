@@ -25,6 +25,13 @@ jobs:
           mkdir -p app/boards/shields/k30_dongle
           cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30_dongle"/* app/boards/shields/k30_dongle/
 
+      - name: Modify board pinctrl for I2C SDA pin (P0.15 → P0.20)
+        working-directory: zmk
+        run: |
+          sed -i 's/TWIM_SDA, 0, 15/TWIM_SDA, 0, 20/g' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
+          echo "=== Modified pinctrl ==="
+          cat app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
+
       - name: Build k30 peripheral firmware
         working-directory: zmk
         run: |
