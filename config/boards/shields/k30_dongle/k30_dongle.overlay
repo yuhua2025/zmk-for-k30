@@ -40,7 +40,7 @@
 		group1 {
 			psels = <NRF_PSEL(TWIM_SDA, 0, 20)>,
 				<NRF_PSEL(TWIM_SCL, 0, 17)>;
-			bias-pull-up;
+			low-power-enable;
 		};
 	};
 	k30_dongle_i2c_sleep: k30_dongle_i2c_sleep {
