@@ -30,8 +30,22 @@ jobs:
         run: |
           sed -i 's/TWIM_SDA, 0, 15/TWIM_SDA, 0, 20/g' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
           sed -i '/TWIM_SCL, 0, 17;/a \t\t\tbias-pull-up;' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
-          echo "=== Modified pinctrl ==="
-          cat app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
+
+      - name: Patch k30_dongle.conf with display memory fixes
+        working-directory: zmk
+        run: |
+          CONF=app/boards/shields/k30_dongle/k30_dongle.conf
+          echo "" >> $CONF
+          echo "# Display memory fixes" >> $CONF
+          echo "CONFIG_HEAP_MEM_POOL_SIZE=16384" >> $CONF
+          echo "CONFIG_LV_MEM_CUSTOM=n" >> $CONF
+          echo "CONFIG_LV_MEM_SIZE=16384" >> $CONF
+          echo "CONFIG_ZMK_DISPLAY_WORK_QUEUE_DEDICATED=y" >> $CONF
+          echo "CONFIG_ZMK_DISPLAY_DEDICATED_THREAD_STACK_SIZE=4096" >> $CONF
+          echo "CONFIG_MAIN_STACK_SIZE=2048" >> $CONF
+          echo "CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048" >> $CONF
+          echo "=== Patched conf ==="
+          cat $CONF
 
       - name: Build k30 peripheral firmware
         working-directory: zmk
