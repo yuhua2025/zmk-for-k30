@@ -116,20 +116,22 @@ ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
-    /* Battery label - top right */
+    /* Battery label - top right, 16px */
     battery_label = lv_label_create(screen);
-    lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 0);
+    lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 2);
+    lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_16, 0);
     lv_label_set_text(battery_label, "BAT:?%");
 
-    /* Output label - top left */
+    /* Output label - top left, 16px */
     output_label = lv_label_create(screen);
-    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 2, 0);
+    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 2, 2);
+    lv_obj_set_style_text_font(output_label, &lv_font_montserrat_16, 0);
     lv_label_set_text(output_label, "---");
 
-    /* Layer label - center */
+    /* Layer label - bottom center, 16px */
     layer_label = lv_label_create(screen);
-    lv_obj_align(layer_label, LV_ALIGN_CENTER, 0, 4);
-    lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_12, 0);
+    lv_obj_align(layer_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_16, 0);
     lv_label_set_text(layer_label, "---");
 
     /* Initial update */
