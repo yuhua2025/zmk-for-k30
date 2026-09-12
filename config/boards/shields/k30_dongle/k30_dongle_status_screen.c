@@ -24,6 +24,7 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define DISPLAY_BLANK_TIMEOUT_SECONDS 15
+#define BLANK_TIMER_PERIOD_MS 1000
 
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_label_b;  /* bold shadow */
@@ -33,19 +34,28 @@ static lv_obj_t *layer_label;
 static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
+/* 单调时间戳，记录最近一次"活动"时间；监听器在 system workqueue 上下文中只更新它，
+   真正的 LVGL 操作全部交给 display workqueue / lv_timer 处理。 */
+static atomic_t last_activity_ms = ATOMIC_INIT(0);
 static volatile bool display_blanked = false;
-static volatile bool pending_unblank = false;
+static lv_timer_t *blank_timer = NULL;
 
-/* Forward declarations for work handlers */
+/* Forward declarations */
 static void refresh_work_handler(struct k_work *work);
-static void blank_display_work_handler(struct k_work *work);
-static void unblank_display(void);
-
 K_WORK_DEFINE(refresh_work, refresh_work_handler);
-K_WORK_DELAYABLE_DEFINE(blank_work, blank_display_work_handler);
 
 static void update_battery(void) {
     char text[16];
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+    /* 轮询外设电量缓存。central.c 在 raise zmk_peripheral_battery_state_changed 之前
+       就把电量写入缓存数组，所以这里读到的就是最新值。事件监听器只是个冗余的
+       "wake up" 触发器，电量真正的来源是这个 API。 */
+    uint8_t level = 0;
+    if (zmk_split_central_get_peripheral_battery_level(0, &level) == 0) {
+        battery_level = level;
+    }
+#endif
 
     snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
     lv_label_set_text(battery_label, text);
@@ -84,57 +94,56 @@ static void update_layer(void) {
     lv_label_set_text(layer_label_b, name);
 }
 
-static void set_labels_visible(bool visible) {
-    if (visible) {
-        lv_obj_clear_flag(output_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(output_label_b, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(battery_label_b, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(layer_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(layer_label_b, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(output_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(output_label_b, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(battery_label_b, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(layer_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(layer_label_b, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
 static void refresh_work_handler(struct k_work *work) {
-    /* 在 display workqueue 中处理可能的 unblank 请求，避免 LVGL 跨线程操作 */
-    if (pending_unblank) {
-        pending_unblank = false;
-        set_labels_visible(true);
-    }
     update_battery();
     update_output();
     update_layer();
 }
 
-static void blank_display_work_handler(struct k_work *work) {
-    if (!display_blanked) {
-        /* 隐藏所有 label，背景已是黑色，所以视觉效果就是黑屏 */
-        set_labels_visible(false);
+/* 把所有 label 文本清空 —— 这是已知的可行方法（lv_label_set_text 在 update_battery 里
+   一直工作正常），用 set_text("") 实现"黑屏"而不是 lv_obj_add_flag(HIDDEN)，因为后者
+   在某些 LVGL 配置下不会触发重绘。 */
+static void clear_all_labels(void) {
+    lv_label_set_text(output_label, "");
+    lv_label_set_text(output_label_b, "");
+    lv_label_set_text(battery_label, "");
+    lv_label_set_text(battery_label_b, "");
+    lv_label_set_text(layer_label, "");
+    lv_label_set_text(layer_label_b, "");
+}
+
+/* lv_timer 回调：在 LVGL 线程里运行，所有 LVGL 调用都安全。
+   每 1 秒检查一次"距离上次活动的时间"，>= 15 秒就清空 label。 */
+static void blank_timer_cb(lv_timer_t *timer) {
+    if (display_blanked) {
+        return;
+    }
+    int32_t now_ms = (int32_t)k_uptime_get_32();
+    int32_t last_ms = atomic_get(&last_activity_ms);
+    int32_t elapsed_ms = now_ms - last_ms;
+    if (elapsed_ms < 0) {
+        elapsed_ms = INT32_MAX;  /* 时间戳回绕，强制进入 blank */
+    }
+    if (elapsed_ms >= DISPLAY_BLANK_TIMEOUT_SECONDS * 1000) {
+        LOG_INF("Blanking display after %d ms idle", elapsed_ms);
+        clear_all_labels();
         display_blanked = true;
     }
 }
 
+/* 监听器调用：只更新时间戳 + 触发 refresh；不做任何 LVGL 操作 */
+static void mark_activity(void) {
+    atomic_set(&last_activity_ms, (int32_t)k_uptime_get_32());
+}
+
 static void unblank_display(void) {
-    bool was_blanked = display_blanked;
-    /* 标记需要在 display workqueue 中执行 unblank（set_labels_visible 是 LVGL 操作，
-       必须在 display 线程中调用）。同时立即清空 display_blanked，让事件监听器知道
-       屏幕已醒，可以在 display 线程上安全提交后续 refresh 工作。 */
-    display_blanked = false;
-    if (was_blanked) {
-        pending_unblank = true;
+    mark_activity();
+    if (display_blanked) {
+        display_blanked = false;
+        if (zmk_display_is_initialized()) {
+            k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+        }
     }
-    if (zmk_display_is_initialized()) {
-        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
-    }
-    k_work_reschedule_for_queue(zmk_display_work_q(), &blank_work,
-                                K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
 }
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
@@ -143,7 +152,6 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
         as_zmk_peripheral_battery_state_changed(eh);
 
     if (ev != NULL) {
-        /* 总是更新电量缓存，保证唤醒时显示最新值；仅在屏幕醒着时刷新 UI */
         battery_level = ev->state_of_charge;
         if (!display_blanked && zmk_display_is_initialized()) {
             k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
@@ -158,10 +166,10 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 #endif
 
 static int layer_listener(const zmk_event_t *eh) {
+    unblank_display();
     if (zmk_display_is_initialized()) {
         k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     }
-    unblank_display();
     return 0;
 }
 
@@ -169,10 +177,10 @@ ZMK_LISTENER(dongle_display_layer, layer_listener);
 ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
+    unblank_display();
     if (zmk_display_is_initialized()) {
         k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     }
-    unblank_display();
     return 0;
 }
 
@@ -180,7 +188,7 @@ ZMK_LISTENER(dongle_display_endpoint, endpoint_listener);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 
-/* 键盘按键触发点亮屏幕 */
+/* 键盘按键触发点亮屏幕（外设按键通过 split BLE 上报到 central） */
 static int position_listener(const zmk_event_t *eh) {
     unblank_display();
     return 0;
@@ -192,9 +200,8 @@ ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
-    /* 启动屏幕休眠定时器 */
-    k_work_schedule_for_queue(zmk_display_work_q(), &blank_work,
-                              K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
+    /* 初始化活动时间 —— 屏幕将在 15 秒后休眠（如果没有按键） */
+    atomic_set(&last_activity_ms, (int32_t)k_uptime_get_32());
 
     /* Black background + white text = "黑底白字" on SSD1306 (white pixels lit) */
     lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
@@ -237,6 +244,13 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_text_font(layer_label_b, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(layer_label_b, lv_color_white(), 0);
     lv_label_set_text(layer_label_b, "---");
+
+    /* 启动 LVGL 定时器，每秒检查是否进入休眠。
+       lv_timer_create 在 init 完成后才被 lv_task_handler 驱动，正好。 */
+    blank_timer = lv_timer_create(blank_timer_cb, BLANK_TIMER_PERIOD_MS, NULL);
+    if (blank_timer != NULL) {
+        lv_timer_set_repeat_count(blank_timer, -1);  /* 无限循环 */
+    }
 
     /* Initial update */
     update_output();
