@@ -25,6 +25,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define DISPLAY_BLANK_TIMEOUT_SECONDS 15
 #define TICK_PERIOD_MS 500
+#define TICK_THREAD_STACK_SIZE 2048
+#define TICK_THREAD_PRIORITY 0   /* 高优先级，避免被饿死 */
 
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_label_b;
@@ -38,14 +40,11 @@ static atomic_t last_activity_ms = ATOMIC_INIT(0);
 static volatile bool display_blanked = false;
 static volatile int tick_count = 0;
 
-static void tick_work_handler(struct k_work *work);
-static void refresh_work_handler(struct k_work *work);
-
-static void tick_timer_cb(struct k_timer *timer);
-
-K_WORK_DEFINE(tick_work, tick_work_handler);
-K_WORK_DEFINE(refresh_work, refresh_work_handler);
-K_TIMER_DEFINE(tick_timer, tick_timer_cb, NULL);
+/* 独立线程，完全不依赖 ZMK 的 display workqueue。
+   如果 display workqueue 卡死了（T:0 不变证明），这个线程仍然能运行。 */
+K_THREAD_STACK_DEFINE(tick_thread_stack, TICK_THREAD_STACK_SIZE);
+static struct k_thread tick_thread_data;
+static bool tick_thread_started = false;
 
 static void update_battery(void) {
     char text[16];
@@ -83,7 +82,7 @@ static void update_output(void) {
 }
 
 static void update_layer(void) {
-    /* 调试：显示 tick_count 判断定时器是否运行 */
+    /* 调试：显示 tick_count 判断线程是否在运行 */
     char tick_text[16];
     snprintf(tick_text, sizeof(tick_text), "T:%d", tick_count);
     lv_label_set_text(layer_label, tick_text);
@@ -99,49 +98,41 @@ static void clear_all_labels(void) {
     lv_label_set_text(layer_label_b, "");
 }
 
-/* tick_work: 在 display workqueue 线程中运行，所有 LVGL 调用安全 */
-static void tick_work_handler(struct k_work *work) {
-    tick_count++;
+/* 独立线程主函数：
+   - k_sleep 不依赖 k_timer 回调
+   - 直接调用 lv_label_set_text + lv_task_handler，不依赖 workqueue
+   - 如果 ZMK 的 display workqueue 卡死了，这个线程仍然能驱动屏幕更新 */
+static void tick_thread_main(void *a, void *b, void *c) {
+    while (1) {
+        k_sleep(K_MSEC(TICK_PERIOD_MS));
 
-    /* 检查休眠 */
-    if (!display_blanked) {
-        int32_t now_ms = (int32_t)k_uptime_get_32();
-        int32_t last_ms = (int32_t)atomic_get(&last_activity_ms);
-        int32_t elapsed_ms = now_ms - last_ms;
-        if (elapsed_ms < 0) {
-            elapsed_ms = INT32_MAX;
+        tick_count++;
+
+        /* 检查休眠 */
+        if (!display_blanked) {
+            int32_t now_ms = (int32_t)k_uptime_get_32();
+            int32_t last_ms = (int32_t)atomic_get(&last_activity_ms);
+            int32_t elapsed_ms = now_ms - last_ms;
+            if (elapsed_ms < 0) {
+                elapsed_ms = INT32_MAX;
+            }
+            if (elapsed_ms >= DISPLAY_BLANK_TIMEOUT_SECONDS * 1000) {
+                LOG_INF("Blanking display after %d ms idle", elapsed_ms);
+                clear_all_labels();
+                display_blanked = true;
+            }
         }
-        if (elapsed_ms >= DISPLAY_BLANK_TIMEOUT_SECONDS * 1000) {
-            LOG_INF("Blanking display after %d ms idle", elapsed_ms);
-            clear_all_labels();
-            display_blanked = true;
+
+        /* 每 tick 都刷新显示 */
+        if (!display_blanked) {
+            update_battery();
+            update_output();
+            update_layer();
         }
+
+        /* 强制驱动 LVGL 渲染管线 —— flush 像素到 SSD1306 */
+        lv_task_handler();
     }
-
-    /* 每 tick 都刷新显示（读取最新电量缓存 + 更新 tick_count 显示） */
-    if (!display_blanked) {
-        update_battery();
-        update_output();
-        update_layer();
-    }
-
-    /* 核心修复：强制调用 lv_task_handler 驱动 LVGL 渲染管线。
-       ZMK 框架的 display_timer/display_tick_work 机制似乎没在工作
-       （T:0 不变证明 lv_task_handler 没在持续运行），所以我们自己驱动。
-       本函数运行在 display workqueue 线程上，和 ZMK 的 display_tick_cb
-       同一个线程，调用 lv_task_handler 是安全的。 */
-    lv_task_handler();
-}
-
-static void refresh_work_handler(struct k_work *work) {
-    update_battery();
-    update_output();
-    update_layer();
-}
-
-/* k_timer 回调：运行在软中断上下文，提交 work 到 display workqueue */
-static void tick_timer_cb(struct k_timer *timer) {
-    k_work_submit_to_queue(zmk_display_work_q(), &tick_work);
 }
 
 static void mark_activity(void) {
@@ -152,9 +143,6 @@ static void unblank_display(void) {
     mark_activity();
     if (display_blanked) {
         display_blanked = false;
-        if (zmk_display_is_initialized()) {
-            k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
-        }
     }
 }
 
@@ -243,10 +231,15 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_text_color(layer_label_b, lv_color_white(), 0);
     lv_label_set_text(layer_label_b, "---");
 
-    /* 使用 Zephyr 原生 k_timer（不依赖 lv_task_handler/lv_timer）。
-       k_timer 回调在软中断上下文运行，提交 tick_work 到 display workqueue，
-       tick_work 在 LVGL 线程中安全执行所有 LVGL 操作。 */
-    k_timer_start(&tick_timer, K_MSEC(TICK_PERIOD_MS), K_MSEC(TICK_PERIOD_MS));
+    /* 启动独立线程：不依赖 ZMK display workqueue、不依赖 k_timer 回调。
+       k_sleep 由系统时钟驱动，只要内核在运行线程就会运行。 */
+    if (!tick_thread_started) {
+        k_thread_create(&tick_thread_data, tick_thread_stack,
+                        K_THREAD_STACK_SIZEOF(tick_thread_stack),
+                        tick_thread_main, NULL, NULL, NULL,
+                        TICK_THREAD_PRIORITY, 0, K_NO_WAIT);
+        tick_thread_started = true;
+    }
 
     update_output();
     update_layer();
