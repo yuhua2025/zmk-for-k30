@@ -25,12 +25,6 @@ jobs:
           mkdir -p app/boards/shields/k30_dongle
           cp -r "$GITHUB_WORKSPACE/config/boards/shields/k30_dongle"/* app/boards/shields/k30_dongle/
 
-      - name: Modify board pinctrl for I2C (P0.20 + pull-up)
-        working-directory: zmk
-        run: |
-          sed -i 's/TWIM_SDA, 0, 15/TWIM_SDA, 0, 20/g' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
-          sed -i '/TWIM_SCL, 0, 17;/a \t\t\tbias-pull-up;' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
-
       - name: Patch Kconfig.defconfig for mono OLED display
         working-directory: zmk
         run: |
