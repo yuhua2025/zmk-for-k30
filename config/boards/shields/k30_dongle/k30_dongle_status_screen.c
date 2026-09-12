@@ -33,7 +33,6 @@ static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
 static bool display_blanked = false;
-static lv_obj_t *root_screen = NULL;
 
 /* Forward declarations for work handlers */
 static void refresh_work_handler(struct k_work *work);
@@ -45,13 +44,6 @@ K_WORK_DELAYABLE_DEFINE(blank_work, blank_display_work_handler);
 
 static void update_battery(void) {
     char text[16];
-
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
-    uint8_t level = 0;
-    if (zmk_split_central_get_peripheral_battery_level(0, &level) == 0) {
-        battery_level = level;
-    }
-#endif
 
     snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
     lv_label_set_text(battery_label, text);
@@ -96,18 +88,36 @@ static void refresh_work_handler(struct k_work *work) {
     update_layer();
 }
 
+static void set_labels_visible(bool visible) {
+    if (visible) {
+        lv_obj_clear_flag(output_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(output_label_b, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(battery_label_b, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(layer_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(layer_label_b, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(output_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(output_label_b, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(battery_label_b, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(layer_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(layer_label_b, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void blank_display_work_handler(struct k_work *work) {
-    if (!display_blanked && root_screen != NULL) {
-        /* 隐藏整个屏幕内容，背景已是黑色，所以视觉效果就是黑屏 */
-        lv_obj_add_flag(root_screen, LV_OBJ_FLAG_HIDDEN);
+    if (!display_blanked) {
+        /* 隐藏所有 label，背景已是黑色，所以视觉效果就是黑屏 */
+        set_labels_visible(false);
         display_blanked = true;
     }
 }
 
 static void unblank_display(void) {
     bool was_blanked = display_blanked;
-    if (display_blanked && root_screen != NULL) {
-        lv_obj_clear_flag(root_screen, LV_OBJ_FLAG_HIDDEN);
+    if (display_blanked) {
+        set_labels_visible(true);
         display_blanked = false;
     }
     /* 唤醒时刷新一次 UI，显示休眠期间更新的最新数据（电量等） */
@@ -167,7 +177,6 @@ ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
 
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    root_screen = screen;
 
     /* 启动屏幕休眠定时器 */
     k_work_schedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
