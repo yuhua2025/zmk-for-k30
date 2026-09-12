@@ -129,7 +129,7 @@ lv_obj_t *zmk_display_status_screen(void) {
     /* Layer label - center */
     layer_label = lv_label_create(screen);
     lv_obj_align(layer_label, LV_ALIGN_CENTER, 0, 4);
-    lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_12, 0);
     lv_label_set_text(layer_label, "---");
 
     /* Initial update */
