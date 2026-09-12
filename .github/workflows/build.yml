@@ -57,12 +57,12 @@ jobs:
       - name: Build k30 peripheral firmware
         working-directory: zmk
         run: |
-          west build -b nrfmicro_13 -s app -d build_k30 -- -DSHIELD=k30
+          west build -b nrfmicro_13 -s app -d build_k30 -- -DSHIELD=k30 -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
 
       - name: Build k30 dongle firmware (with USB logging)
         working-directory: zmk
         run: |
-          west build -b nrfmicro_13 -s app -d build_dongle -- -DSHIELD=k30_dongle
+          west build -b nrfmicro_13 -s app -d build_dongle -- -DSHIELD=k30_dongle -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=y
 
       - name: Upload k30 peripheral firmware
         uses: actions/upload-artifact@v4
