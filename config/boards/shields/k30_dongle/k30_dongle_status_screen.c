@@ -14,6 +14,7 @@
 #include <zmk/event_manager.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
+#include <zmk/display.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 #include <zmk/split/central.h>
@@ -32,7 +33,8 @@ static lv_obj_t *layer_label;
 static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
-static bool display_blanked = false;
+static volatile bool display_blanked = false;
+static volatile bool pending_unblank = false;
 
 /* Forward declarations for work handlers */
 static void refresh_work_handler(struct k_work *work);
@@ -82,12 +84,6 @@ static void update_layer(void) {
     lv_label_set_text(layer_label_b, name);
 }
 
-static void refresh_work_handler(struct k_work *work) {
-    update_battery();
-    update_output();
-    update_layer();
-}
-
 static void set_labels_visible(bool visible) {
     if (visible) {
         lv_obj_clear_flag(output_label, LV_OBJ_FLAG_HIDDEN);
@@ -106,6 +102,17 @@ static void set_labels_visible(bool visible) {
     }
 }
 
+static void refresh_work_handler(struct k_work *work) {
+    /* 在 display workqueue 中处理可能的 unblank 请求，避免 LVGL 跨线程操作 */
+    if (pending_unblank) {
+        pending_unblank = false;
+        set_labels_visible(true);
+    }
+    update_battery();
+    update_output();
+    update_layer();
+}
+
 static void blank_display_work_handler(struct k_work *work) {
     if (!display_blanked) {
         /* 隐藏所有 label，背景已是黑色，所以视觉效果就是黑屏 */
@@ -116,15 +123,18 @@ static void blank_display_work_handler(struct k_work *work) {
 
 static void unblank_display(void) {
     bool was_blanked = display_blanked;
-    if (display_blanked) {
-        set_labels_visible(true);
-        display_blanked = false;
-    }
-    /* 唤醒时刷新一次 UI，显示休眠期间更新的最新数据（电量等） */
+    /* 标记需要在 display workqueue 中执行 unblank（set_labels_visible 是 LVGL 操作，
+       必须在 display 线程中调用）。同时立即清空 display_blanked，让事件监听器知道
+       屏幕已醒，可以在 display 线程上安全提交后续 refresh 工作。 */
+    display_blanked = false;
     if (was_blanked) {
-        k_work_submit(&refresh_work);
+        pending_unblank = true;
     }
-    k_work_reschedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
+    if (zmk_display_is_initialized()) {
+        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+    }
+    k_work_reschedule_for_queue(zmk_display_work_q(), &blank_work,
+                                K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
 }
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
@@ -135,8 +145,8 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
     if (ev != NULL) {
         /* 总是更新电量缓存，保证唤醒时显示最新值；仅在屏幕醒着时刷新 UI */
         battery_level = ev->state_of_charge;
-        if (!display_blanked) {
-            k_work_submit(&refresh_work);
+        if (!display_blanked && zmk_display_is_initialized()) {
+            k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
         }
     }
 
@@ -148,7 +158,9 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 #endif
 
 static int layer_listener(const zmk_event_t *eh) {
-    k_work_submit(&refresh_work);
+    if (zmk_display_is_initialized()) {
+        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+    }
     unblank_display();
     return 0;
 }
@@ -157,7 +169,9 @@ ZMK_LISTENER(dongle_display_layer, layer_listener);
 ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
-    k_work_submit(&refresh_work);
+    if (zmk_display_is_initialized()) {
+        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+    }
     unblank_display();
     return 0;
 }
@@ -179,7 +193,8 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
     /* 启动屏幕休眠定时器 */
-    k_work_schedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
+    k_work_schedule_for_queue(zmk_display_work_q(), &blank_work,
+                              K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
 
     /* Black background + white text = "黑底白字" on SSD1306 (white pixels lit) */
     lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
