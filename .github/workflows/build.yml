@@ -54,6 +54,13 @@ jobs:
           echo "=== Patched conf ==="
           cat $CONF
 
+      - name: Add custom status screen to ZMK app
+        working-directory: zmk
+        run: |
+          echo 'target_sources(app PRIVATE ${CMAKE_SOURCE_DIR}/boards/shields/k30_dongle/k30_dongle_status_screen.c)' >> app/CMakeLists.txt
+          echo "=== Patched app CMakeLists.txt ==="
+          tail -5 app/CMakeLists.txt
+
       - name: Build k30 peripheral firmware
         working-directory: zmk
         run: |
