@@ -106,9 +106,14 @@ static void blank_display_work_handler(struct k_work *work) {
 }
 
 static void unblank_display(void) {
+    bool was_blanked = display_blanked;
     if (display_dev != NULL && display_blanked) {
         display_blanking_off(display_dev);
         display_blanked = false;
+    }
+    /* 唤醒时刷新一次 UI，显示休眠期间更新的最新数据（电量等） */
+    if (was_blanked) {
+        k_work_submit(&refresh_work);
     }
     k_work_reschedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
 }
@@ -119,6 +124,7 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
         as_zmk_peripheral_battery_state_changed(eh);
 
     if (ev != NULL) {
+        /* 总是更新电量缓存，保证唤醒时显示最新值；仅在屏幕醒着时刷新 UI */
         battery_level = ev->state_of_charge;
         if (!display_blanked) {
             k_work_submit(&refresh_work);
