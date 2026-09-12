@@ -7,7 +7,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include <zmk/display.h>
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
@@ -72,11 +71,13 @@ static void update_layer(void) {
     lv_label_set_text(layer_label, name);
 }
 
-static void battery_work_handler(struct k_work *work) {
+static void refresh_work_handler(struct k_work *work) {
     update_battery();
+    update_output();
+    update_layer();
 }
 
-K_WORK_DEFINE(battery_work, battery_work_handler);
+K_WORK_DEFINE(refresh_work, refresh_work_handler);
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 static int peripheral_battery_listener(const zmk_event_t *eh) {
@@ -85,7 +86,7 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
 
     if (ev != NULL) {
         battery_level = ev->state_of_charge;
-        k_work_submit(&battery_work);
+        k_work_submit(&refresh_work);
     }
 
     return 0;
@@ -96,7 +97,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 #endif
 
 static int layer_listener(const zmk_event_t *eh) {
-    k_work_submit(&battery_work);
+    k_work_submit(&refresh_work);
     return 0;
 }
 
@@ -104,7 +105,7 @@ ZMK_LISTENER(dongle_display_layer, layer_listener);
 ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
-    k_work_submit(&battery_work);
+    k_work_submit(&refresh_work);
     return 0;
 }
 
@@ -114,7 +115,6 @@ ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
 
     /* Battery label - top right */
     battery_label = lv_label_create(screen);
