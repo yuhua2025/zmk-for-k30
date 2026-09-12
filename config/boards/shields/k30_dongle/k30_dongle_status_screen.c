@@ -6,15 +6,15 @@
 #include <lvgl.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/display.h>
+#include <zephyr/devicetree.h>
 
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
-#include <zmk/events/activity_state_changed.h>
 #include <zmk/event_manager.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
-#include <zmk/display.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 #include <zmk/split/central.h>
@@ -32,7 +32,7 @@ static lv_obj_t *layer_label;
 static uint8_t battery_level = 0;
 static bool display_blanked = false;
 
-static struct k_work_delayable blank_work;
+static const struct device *display_dev;
 
 static void update_battery(void) {
     char text[16];
@@ -79,23 +79,18 @@ static void update_layer(void) {
 }
 
 static void blank_display_work_handler(struct k_work *work) {
-    const struct device *display = zmk_display_get_device();
-
-    if (display != NULL && !display_blanked) {
-        display_blanking_on(display);
+    if (display_dev != NULL && !display_blanked) {
+        display_blanking_on(display_dev);
         display_blanked = true;
     }
 }
 
 static void unblank_display(void) {
-    const struct device *display = zmk_display_get_device();
-
-    if (display != NULL && display_blanked) {
-        display_blanking_off(display);
+    if (display_dev != NULL && display_blanked) {
+        display_blanking_off(display_dev);
         display_blanked = false;
     }
 
-    /* Reset the blank timer */
     k_work_reschedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
 }
 
@@ -129,6 +124,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 
 static int layer_listener(const zmk_event_t *eh) {
     k_work_submit(&refresh_work);
+    unblank_display();
     return 0;
 }
 
@@ -137,6 +133,7 @@ ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
     k_work_submit(&refresh_work);
+    unblank_display();
     return 0;
 }
 
@@ -144,41 +141,17 @@ ZMK_LISTENER(dongle_display_endpoint, endpoint_listener);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 
-static int activity_listener(const zmk_event_t *eh) {
-    struct zmk_activity_state_changed *ev = as_zmk_activity_state_changed(eh);
-
-    if (ev == NULL) {
-        return -ENOTSUP;
-    }
-
-    switch (ev->state) {
-    case ZMK_ACTIVITY_ACTIVE:
-        unblank_display();
-        break;
-    case ZMK_ACTIVITY_IDLE:
-    case ZMK_ACTIVITY_SLEEP:
-        /* Do nothing, let the timer handle it */
-        break;
-    default:
-        break;
-    }
-
-    return 0;
-}
-
-ZMK_LISTENER(dongle_display_activity, activity_listener);
-ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
-
-static int key_position_listener(const zmk_event_t *eh) {
-    /* Any key press wakes up the display */
+static int position_listener(const zmk_event_t *eh) {
     unblank_display();
     return 0;
 }
 
-ZMK_LISTENER(dongle_display_key, key_position_listener);
-ZMK_SUBSCRIPTION(dongle_display_key, zmk_key_state_changed);
+ZMK_LISTENER(dongle_display_position, position_listener);
+ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
 
 lv_obj_t *zmk_display_status_screen(void) {
+    display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+
     lv_obj_t *screen = lv_obj_create(NULL);
 
     /* Set black background */
