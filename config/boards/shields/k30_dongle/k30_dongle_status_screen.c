@@ -6,8 +6,6 @@
 #include <lvgl.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/drivers/display.h>
-#include <zephyr/devicetree.h>
 
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/endpoint_changed.h>
@@ -35,7 +33,7 @@ static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
 static bool display_blanked = false;
-static const struct device *display_dev;
+static lv_obj_t *root_screen = NULL;
 
 /* Forward declarations for work handlers */
 static void refresh_work_handler(struct k_work *work);
@@ -99,16 +97,17 @@ static void refresh_work_handler(struct k_work *work) {
 }
 
 static void blank_display_work_handler(struct k_work *work) {
-    if (display_dev != NULL && !display_blanked) {
-        display_blanking_on(display_dev);
+    if (!display_blanked && root_screen != NULL) {
+        /* 隐藏整个屏幕内容，背景已是黑色，所以视觉效果就是黑屏 */
+        lv_obj_add_flag(root_screen, LV_OBJ_FLAG_HIDDEN);
         display_blanked = true;
     }
 }
 
 static void unblank_display(void) {
     bool was_blanked = display_blanked;
-    if (display_dev != NULL && display_blanked) {
-        display_blanking_off(display_dev);
+    if (display_blanked && root_screen != NULL) {
+        lv_obj_clear_flag(root_screen, LV_OBJ_FLAG_HIDDEN);
         display_blanked = false;
     }
     /* 唤醒时刷新一次 UI，显示休眠期间更新的最新数据（电量等） */
@@ -168,12 +167,10 @@ ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
 
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
+    root_screen = screen;
 
-    /* 初始化 display 设备并启动屏幕休眠定时器 */
-    display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
-    if (display_dev != NULL && device_is_ready(display_dev)) {
-        k_work_schedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
-    }
+    /* 启动屏幕休眠定时器 */
+    k_work_schedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
 
     /* Black background + white text = "黑底白字" on SSD1306 (white pixels lit) */
     lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
