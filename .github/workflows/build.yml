@@ -46,14 +46,6 @@ jobs:
           echo "=== Patched k30.conf ==="
           cat app/boards/shields/k30/k30.conf
 
-      - name: Patch k30_dongle.conf with display and battery fixes
-        working-directory: zmk
-        run: |
-          CONF=app/boards/shields/k30_dongle/k30_dongle.conf
-          printf '\n# Display - custom status screen with peripheral battery\nCONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y\nCONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y\nCONFIG_LV_FONT_DEFAULT_MONTSERRAT_16=y\nCONFIG_ZMK_DISPLAY_WORK_QUEUE_DEDICATED=y\nCONFIG_ZMK_DISPLAY_DEDICATED_THREAD_STACK_SIZE=4096\nCONFIG_MAIN_STACK_SIZE=2048\nCONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048\nCONFIG_ZMK_DISPLAY_BLANK_ON_IDLE=n\n' >> "$CONF"
-          echo "=== Patched conf ==="
-          cat $CONF
-
       - name: Build k30 peripheral firmware
         working-directory: zmk
         run: |
@@ -62,11 +54,11 @@ jobs:
       - name: Add custom status screen for dongle build only
         working-directory: zmk
         run: |
-          sed -i 's|target_sources_ifdef(CONFIG_ZMK_DISPLAY app PRIVATE src/display/main.c)|target_sources_ifdef(CONFIG_ZMK_DISPLAY app PRIVATE src/display/main.c boards/shields/k30_dongle/k30_dongle_status_screen.c)|' app/src/display/CMakeLists.txt
+          sed -i 's|target_sources_ifdef(CONFIG_ZMK_DISPLAY app PRIVATE main.c)|target_sources_ifdef(CONFIG_ZMK_DISPLAY app PRIVATE main.c ${CMAKE_SOURCE_DIR}/boards/shields/k30_dongle/k30_dongle_status_screen.c)|' app/src/display/CMakeLists.txt
           echo "=== Patched display CMakeLists.txt ==="
           cat app/src/display/CMakeLists.txt
 
-      - name: Build k30 dongle firmware (with USB logging)
+      - name: Build k30 dongle firmware
         working-directory: zmk
         run: |
           west build -b nrfmicro_13 -s app -d build_dongle -- -DSHIELD=k30_dongle
