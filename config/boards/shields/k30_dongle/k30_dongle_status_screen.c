@@ -31,8 +31,15 @@ static lv_obj_t *layer_label;
 
 static uint8_t battery_level = 0;
 static bool display_blanked = false;
-
 static const struct device *display_dev;
+
+/* Work items defined before use */
+static void refresh_work_handler(struct k_work *work);
+static void blank_display_work_handler(struct k_work *work);
+static void unblank_display(void);
+
+K_WORK_DEFINE(refresh_work, refresh_work_handler);
+K_WORK_DELAYABLE_DEFINE(blank_work, blank_display_work_handler);
 
 static void update_battery(void) {
     char text[16];
@@ -99,9 +106,6 @@ static void refresh_work_handler(struct k_work *work) {
     update_output();
     update_layer();
 }
-
-K_WORK_DEFINE(refresh_work, refresh_work_handler);
-K_WORK_DELAYABLE_DEFINE(blank_work, blank_display_work_handler);
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 static int peripheral_battery_listener(const zmk_event_t *eh) {
