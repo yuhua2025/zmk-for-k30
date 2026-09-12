@@ -39,6 +39,13 @@ jobs:
           echo "=== Patched Kconfig.defconfig ==="
           cat "$KCONF"
 
+      - name: Patch k30.conf - enable battery reporting
+        working-directory: zmk
+        run: |
+          echo "CONFIG_ZMK_BATTERY_REPORTING=y" >> app/boards/shields/k30/k30.conf
+          echo "=== Patched k30.conf ==="
+          cat app/boards/shields/k30/k30.conf
+
       - name: Patch k30_dongle.conf with display and battery fixes
         working-directory: zmk
         run: |
