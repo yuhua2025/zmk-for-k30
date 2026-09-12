@@ -6,10 +6,13 @@
 #include <lvgl.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/display.h>
+#include <zephyr/devicetree.h>
 
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
+#include <zmk/events/position_state_changed.h>
 #include <zmk/event_manager.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
@@ -21,6 +24,8 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
+#define DISPLAY_BLANK_TIMEOUT_SECONDS 15
+
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_label_b;  /* bold shadow */
 static lv_obj_t *output_label;
@@ -29,6 +34,16 @@ static lv_obj_t *layer_label;
 static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
+static bool display_blanked = false;
+static const struct device *display_dev;
+
+/* Forward declarations for work handlers */
+static void refresh_work_handler(struct k_work *work);
+static void blank_display_work_handler(struct k_work *work);
+static void unblank_display(void);
+
+K_WORK_DEFINE(refresh_work, refresh_work_handler);
+K_WORK_DELAYABLE_DEFINE(blank_work, blank_display_work_handler);
 
 static void update_battery(void) {
     char text[16];
@@ -83,7 +98,20 @@ static void refresh_work_handler(struct k_work *work) {
     update_layer();
 }
 
-K_WORK_DEFINE(refresh_work, refresh_work_handler);
+static void blank_display_work_handler(struct k_work *work) {
+    if (display_dev != NULL && !display_blanked) {
+        display_blanking_on(display_dev);
+        display_blanked = true;
+    }
+}
+
+static void unblank_display(void) {
+    if (display_dev != NULL && display_blanked) {
+        display_blanking_off(display_dev);
+        display_blanked = false;
+    }
+    k_work_reschedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
+}
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 static int peripheral_battery_listener(const zmk_event_t *eh) {
@@ -92,7 +120,9 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
 
     if (ev != NULL) {
         battery_level = ev->state_of_charge;
-        k_work_submit(&refresh_work);
+        if (!display_blanked) {
+            k_work_submit(&refresh_work);
+        }
     }
 
     return 0;
@@ -104,6 +134,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 
 static int layer_listener(const zmk_event_t *eh) {
     k_work_submit(&refresh_work);
+    unblank_display();
     return 0;
 }
 
@@ -112,6 +143,7 @@ ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
     k_work_submit(&refresh_work);
+    unblank_display();
     return 0;
 }
 
@@ -119,8 +151,23 @@ ZMK_LISTENER(dongle_display_endpoint, endpoint_listener);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 
+/* 键盘按键触发点亮屏幕 */
+static int position_listener(const zmk_event_t *eh) {
+    unblank_display();
+    return 0;
+}
+
+ZMK_LISTENER(dongle_display_position, position_listener);
+ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
+
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
+
+    /* 初始化 display 设备并启动屏幕休眠定时器 */
+    display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+    if (display_dev != NULL && device_is_ready(display_dev)) {
+        k_work_schedule(&blank_work, K_SECONDS(DISPLAY_BLANK_TIMEOUT_SECONDS));
+    }
 
     /* Black background + white text = "黑底白字" on SSD1306 (white pixels lit) */
     lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
