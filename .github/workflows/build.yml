@@ -51,6 +51,12 @@ jobs:
         run: |
           west build -b nrfmicro_13 -s app -d build_k30 -- -DSHIELD=k30
 
+      - name: Remove shield CMakeLists.txt to avoid double compilation
+        working-directory: zmk
+        run: |
+          rm -f app/boards/shields/k30_dongle/CMakeLists.txt
+          echo "=== Removed shield CMakeLists.txt ==="
+
       - name: Add custom status screen for dongle build only
         working-directory: zmk
         run: |
