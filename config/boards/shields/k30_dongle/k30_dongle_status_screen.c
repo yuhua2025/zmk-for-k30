@@ -88,6 +88,16 @@ static void refresh_work_handler(struct k_work *work) {
 
 K_WORK_DEFINE(refresh_work, refresh_work_handler);
 
+/* 延迟刷新：屏幕唤醒后 1秒、3秒再刷新几次，等 peripheral 上报电量到缓存 */
+static void delayed_refresh_handler(struct k_work *work) {
+    update_battery();
+    update_output();
+    update_layer();
+}
+
+K_WORK_DELAYABLE_DEFINE(delayed_refresh_1s, delayed_refresh_handler);
+K_WORK_DELAYABLE_DEFINE(delayed_refresh_3s, delayed_refresh_handler);
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 static int peripheral_battery_listener(const zmk_event_t *eh) {
     const struct zmk_peripheral_battery_state_changed *ev =
@@ -131,11 +141,15 @@ static int position_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(dongle_display_position, position_listener);
 ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
 
-/* 屏幕唤醒时（activity 从 IDLE 变 ACTIVE）立即刷新电量 */
+/* 屏幕唤醒时（activity 从 IDLE 变 ACTIVE）立即刷新 + 延迟刷新
+   peripheral 每 10 秒上报电量，唤醒时缓存可能是旧值，
+   所以在 1秒、3秒后再刷新几次，等 peripheral 上报新电量到缓存 */
 static int activity_listener(const zmk_event_t *eh) {
     const struct zmk_activity_state_changed *ev = as_zmk_activity_state_changed(eh);
     if (ev != NULL && ev->state == ZMK_ACTIVITY_ACTIVE) {
         k_work_submit(&refresh_work);
+        k_work_schedule(&delayed_refresh_1s, K_SECONDS(1));
+        k_work_schedule(&delayed_refresh_3s, K_SECONDS(3));
     }
     return 0;
 }
