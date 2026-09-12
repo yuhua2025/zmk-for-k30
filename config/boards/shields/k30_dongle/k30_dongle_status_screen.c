@@ -4,6 +4,7 @@
  */
 
 #include <lvgl.h>
+#include <stdbool.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -31,6 +32,24 @@ static lv_obj_t *layer_label;
 static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
+static bool have_battery = false;
+
+/*
+ * ZMK zeroes the central battery cache whenever the peripheral disconnects
+ * (our keyboard sleeps after 10 min idle and drops BLE), injecting a fake
+ * 0% event. A working battery never reports exactly 0%, so we ignore zero
+ * values and keep showing the last known good level instead of a misleading
+ * "BAT:0%". The value self-heals via the GATT BAS read on reconnect plus the
+ * peripheral's periodic 60s battery report (see build.yml battery.c patch).
+ */
+static void apply_battery_level(uint8_t level) {
+    if (level == 0) {
+        return;
+    }
+
+    battery_level = level;
+    have_battery = true;
+}
 
 static void update_battery(void) {
     char text[16];
@@ -38,11 +57,16 @@ static void update_battery(void) {
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     uint8_t level = 0;
     if (zmk_split_central_get_peripheral_battery_level(0, &level) == 0) {
-        battery_level = level;
+        apply_battery_level(level);
     }
 #endif
 
-    snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
+    if (!have_battery) {
+        snprintf(text, sizeof(text), "BAT:--");
+    } else {
+        snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
+    }
+
     lv_label_set_text(battery_label, text);
     lv_label_set_text(battery_label_b, text);
 }
@@ -93,7 +117,7 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
         as_zmk_peripheral_battery_state_changed(eh);
 
     if (ev != NULL) {
-        battery_level = ev->state_of_charge;
+        apply_battery_level(ev->state_of_charge);
         k_work_submit(&refresh_work);
     }
 

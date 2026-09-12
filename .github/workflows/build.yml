@@ -31,6 +31,14 @@ jobs:
           sed -i 's/TWIM_SDA, 0, 15/TWIM_SDA, 0, 20/g' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
           sed -i '/TWIM_SCL, 0, 17;/a \t\t\tbias-pull-up;' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
 
+      - name: Patch battery.c - always report battery level on every timer tick
+        working-directory: zmk
+        run: |
+          # ZMK only raises zmk_battery_state_changed when the level CHANGES,
+          # so a dongle that boots/reconnects after the peripheral stays at
+          # 0% until the next real level change. tools/patch_battery_reporting.py
+          # removes that change-check: the 60s battery timer then reports every tick.
+          python3 "$GITHUB_WORKSPACE/tools/patch_battery_reporting.py" app/src/battery.c
       - name: Patch Kconfig.defconfig for mono OLED display
         working-directory: zmk
         run: |
