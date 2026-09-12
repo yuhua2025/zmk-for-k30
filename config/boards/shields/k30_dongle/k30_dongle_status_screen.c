@@ -22,8 +22,11 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static lv_obj_t *battery_label;
+static lv_obj_t *battery_label_b;  /* bold shadow */
 static lv_obj_t *output_label;
+static lv_obj_t *output_label_b;
 static lv_obj_t *layer_label;
+static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
 
@@ -39,6 +42,7 @@ static void update_battery(void) {
 
     snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
     lv_label_set_text(battery_label, text);
+    lv_label_set_text(battery_label_b, text);
 }
 
 static void update_output(void) {
@@ -58,6 +62,7 @@ static void update_output(void) {
     }
 
     lv_label_set_text(output_label, text);
+    lv_label_set_text(output_label_b, text);
 }
 
 static void update_layer(void) {
@@ -69,6 +74,7 @@ static void update_layer(void) {
     }
 
     lv_label_set_text(layer_label, name);
+    lv_label_set_text(layer_label_b, name);
 }
 
 static void refresh_work_handler(struct k_work *work) {
@@ -116,23 +122,35 @@ ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
-    /* Battery label - top right, 16px */
-    battery_label = lv_label_create(screen);
-    lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 2);
-    lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_16, 0);
-    lv_label_set_text(battery_label, "BAT:?%");
-
-    /* Output label - top left, 16px */
+    /* Output label - top left, 16px, bold via 1px offset shadow */
     output_label = lv_label_create(screen);
-    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 2, 2);
+    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 2, 7);
     lv_obj_set_style_text_font(output_label, &lv_font_montserrat_16, 0);
     lv_label_set_text(output_label, "---");
+    output_label_b = lv_label_create(screen);
+    lv_obj_align(output_label_b, LV_ALIGN_TOP_LEFT, 3, 7);
+    lv_obj_set_style_text_font(output_label_b, &lv_font_montserrat_16, 0);
+    lv_label_set_text(output_label_b, "---");
 
-    /* Layer label - bottom center, 16px */
+    /* Battery label - top right, 16px, bold via 1px offset shadow */
+    battery_label = lv_label_create(screen);
+    lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 7);
+    lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_16, 0);
+    lv_label_set_text(battery_label, "BAT:?%");
+    battery_label_b = lv_label_create(screen);
+    lv_obj_align(battery_label_b, LV_ALIGN_TOP_RIGHT, -1, 7);
+    lv_obj_set_style_text_font(battery_label_b, &lv_font_montserrat_16, 0);
+    lv_label_set_text(battery_label_b, "BAT:?%");
+
+    /* Layer label - bottom center, 16px, bold via 1px offset shadow */
     layer_label = lv_label_create(screen);
     lv_obj_align(layer_label, LV_ALIGN_BOTTOM_MID, 0, -2);
     lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_16, 0);
     lv_label_set_text(layer_label, "---");
+    layer_label_b = lv_label_create(screen);
+    lv_obj_align(layer_label_b, LV_ALIGN_BOTTOM_MID, 1, -2);
+    lv_obj_set_style_text_font(layer_label_b, &lv_font_montserrat_16, 0);
+    lv_label_set_text(layer_label_b, "---");
 
     /* Initial update */
     update_output();
