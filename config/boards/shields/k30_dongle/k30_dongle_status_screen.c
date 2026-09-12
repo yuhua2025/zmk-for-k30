@@ -24,7 +24,7 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define DISPLAY_BLANK_TIMEOUT_SECONDS 15
-#define TICK_PERIOD_MS 1000
+#define TICK_PERIOD_MS 500
 
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_label_b;
@@ -124,6 +124,13 @@ static void tick_work_handler(struct k_work *work) {
         update_output();
         update_layer();
     }
+
+    /* 核心修复：强制调用 lv_task_handler 驱动 LVGL 渲染管线。
+       ZMK 框架的 display_timer/display_tick_work 机制似乎没在工作
+       （T:0 不变证明 lv_task_handler 没在持续运行），所以我们自己驱动。
+       本函数运行在 display workqueue 线程上，和 ZMK 的 display_tick_cb
+       同一个线程，调用 lv_task_handler 是安全的。 */
+    lv_task_handler();
 }
 
 static void refresh_work_handler(struct k_work *work) {
