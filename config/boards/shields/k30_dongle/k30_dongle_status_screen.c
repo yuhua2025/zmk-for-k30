@@ -10,9 +10,12 @@
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
+#include <zmk/events/position_state_changed.h>
+#include <zmk/events/activity_state_changed.h>
 #include <zmk/event_manager.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
+#include <zmk/activity.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 #include <zmk/split/central.h>
@@ -118,6 +121,27 @@ static int endpoint_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(dongle_display_endpoint, endpoint_listener);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
+
+/* 按键时刷新显示（读取最新电量缓存）—— 解决屏幕休眠后电量不更新问题 */
+static int position_listener(const zmk_event_t *eh) {
+    k_work_submit(&refresh_work);
+    return 0;
+}
+
+ZMK_LISTENER(dongle_display_position, position_listener);
+ZMK_SUBSCRIPTION(dongle_display_position, zmk_position_state_changed);
+
+/* 屏幕唤醒时（activity 从 IDLE 变 ACTIVE）立即刷新电量 */
+static int activity_listener(const zmk_event_t *eh) {
+    const struct zmk_activity_state_changed *ev = as_zmk_activity_state_changed(eh);
+    if (ev != NULL && ev->state == ZMK_ACTIVITY_ACTIVE) {
+        k_work_submit(&refresh_work);
+    }
+    return 0;
+}
+
+ZMK_LISTENER(dongle_display_activity, activity_listener);
+ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
