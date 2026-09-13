@@ -33,6 +33,7 @@ static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
+static bool battery_received_any = false;
 
 /*
  * ZMK zeroes the central battery cache whenever the peripheral disconnects
@@ -41,8 +42,14 @@ static bool have_battery = false;
  * values and keep showing the last known good level instead of a misleading
  * "BAT:0%". The value self-heals via the GATT BAS read on reconnect plus the
  * peripheral's periodic 60s battery report (see build.yml battery.c patch).
+ *
+ * Debug states:
+ *   "BAT:--" never received ANY battery data (link/report path issue)
+ *   "BAT:0?" received data but only ever 0 (keyboard battery sensor issue)
  */
 static void apply_battery_level(uint8_t level) {
+    battery_received_any = true;
+
     if (level == 0) {
         return;
     }
@@ -61,8 +68,10 @@ static void update_battery(void) {
     }
 #endif
 
-    if (!have_battery) {
+    if (!battery_received_any) {
         snprintf(text, sizeof(text), "BAT:--");
+    } else if (!have_battery) {
+        snprintf(text, sizeof(text), "BAT:0?");
     } else {
         snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
     }
