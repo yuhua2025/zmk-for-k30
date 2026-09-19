@@ -120,6 +120,16 @@ static void refresh_work_handler(struct k_work *work) {
 
 K_WORK_DEFINE(refresh_work, refresh_work_handler);
 
+/*
+ * Periodic self-healing refresh: every event-driven refresh can be missed
+ * (e.g. right after the dongle reboots, or when a battery/layer event races
+ * the display coming up). Ticking every 2s keeps the labels in sync with the
+ * central's battery cache with negligible cost (one cache read + label text).
+ */
+static void refresh_tick_cb(struct k_timer *_timer) { k_work_submit(&refresh_work); }
+
+K_TIMER_DEFINE(refresh_timer, refresh_tick_cb, NULL);
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 static int peripheral_battery_listener(const zmk_event_t *eh) {
     const struct zmk_peripheral_battery_state_changed *ev =
@@ -192,12 +202,12 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 7);
     lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(battery_label, lv_color_white(), 0);
-    lv_label_set_text(battery_label, "BAT:?%");
+    lv_label_set_text(battery_label, "BAT:--");
     battery_label_b = lv_label_create(screen);
     lv_obj_align(battery_label_b, LV_ALIGN_TOP_RIGHT, -1, 7);
     lv_obj_set_style_text_font(battery_label_b, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(battery_label_b, lv_color_white(), 0);
-    lv_label_set_text(battery_label_b, "BAT:?%");
+    lv_label_set_text(battery_label_b, "BAT:--");
 
     /* Layer label - bottom center, 16px, bold via 1px offset shadow */
     layer_label = lv_label_create(screen);
@@ -215,6 +225,9 @@ lv_obj_t *zmk_display_status_screen(void) {
     update_output();
     update_layer();
     update_battery();
+
+    /* Start the periodic self-healing refresh */
+    k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));
 
     return screen;
 }

@@ -30,6 +30,25 @@ jobs:
         run: |
           sed -i 's/TWIM_SDA, 0, 15/TWIM_SDA, 0, 20/g' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
           sed -i '/TWIM_SCL, 0, 17;/a \t\t\tbias-pull-up;' app/boards/arm/nrfmicro/nrfmicro-pinctrl.dtsi
+      - name: Patch split central discovery (ZMK issue #3156 - backport of PR #3411)
+        working-directory: zmk
+        run: |
+          # Known v0.3.0 defect: while the central walks the peripheral's GATT
+          # characteristics, subscribing to the battery characteristic starts a
+          # NESTED CCC discovery that collides with the in-flight walk and
+          # terminates it early. The position-state characteristic is then never
+          # found/subscribed -> the keyboard reconnects after a dongle power
+          # cycle but sends no keys ("disconnected"), and if the walk is cut
+          # even earlier the battery level is never read either (display shows
+          # "?"/"--" forever). This backport defers all subscriptions (and the
+          # battery read) until the walk completes, and disconnects to retry if
+          # the walk ended without the position-state characteristic.
+          # Upstream: https://github.com/zmkfirmware/zmk/issues/3156
+          #           https://github.com/zmkfirmware/zmk/pull/3411
+          git apply --whitespace=nowarn -p1 \
+            "$GITHUB_WORKSPACE/tools/patches/0001-zmk-3156-defer-gatt-subscriptions.patch"
+          grep -q "split_central_flush_subscriptions" app/src/split/bluetooth/central.c
+          echo "central.c discovery patch applied OK"
 
       - name: Patch battery.c - always report battery level on every timer tick
         working-directory: zmk
