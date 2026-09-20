@@ -33,7 +33,7 @@ index b4b61ce7750..7363bb3e134 100644
      slot->run_behavior_handle = 0;
      slot->selected_physical_layout_handle = 0;
  #if IS_ENABLED(CONFIG_ZMK_SPLIT_PERIPHERAL_HID_INDICATORS)
-@@ -535,10 +548,66 @@ static void update_peripherals_selected_physical_layout(struct k_work *_work) {
+@@ -535,10 +548,75 @@ static void update_peripherals_selected_physical_layout(struct k_work *_work) {
  K_WORK_DEFINE(update_peripherals_selected_layouts_work,
                update_peripherals_selected_physical_layout);
  
@@ -84,14 +84,23 @@ index b4b61ce7750..7363bb3e134 100644
                                                   struct bt_gatt_discover_params *params) {
      if (!attr) {
 +        // Walk finished: flush the deferred subscriptions. A walk that "completed"
-+        // without finding position-state is a truncated discovery -- disconnect and
-+        // retry rather than sit deaf.
++        // without finding position-state, or without the battery characteristic, is
++        // a truncated discovery -- disconnect and retry rather than sit deaf.
 +        struct peripheral_slot *done_slot = peripheral_slot_for_conn(conn);
 +        if (done_slot != NULL) {
-+            if (params->type == BT_GATT_DISCOVER_CHARACTERISTIC &&
-+                !done_slot->subscribe_params.value_handle) {
-+                LOG_ERR("Position-state not found during discovery of peripheral - disconnecting "
-+                        "to retry");
++            // A walk that ends without position-state OR without the battery
++            // characteristic is truncated. Stopping at position-state only leaves
++            // a link where keys work but battery is never subscribed/read (the
++            // dongle shows BAT:0? forever), so treat both as truncated and retry.
++            bool truncated = params->type == BT_GATT_DISCOVER_CHARACTERISTIC &&
++                             !done_slot->subscribe_params.value_handle;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
++            truncated =
++                truncated || !done_slot->batt_lvl_subscribe_params.value_handle;
++#endif
++            if (truncated) {
++                LOG_ERR("Discovery of peripheral ended without required characteristics - "
++                        "disconnecting to retry");
 +                bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 +            } else {
 +                split_central_flush_subscriptions(conn, done_slot);
