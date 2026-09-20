@@ -1,8 +1,8 @@
 diff --git a/app/src/split/bluetooth/central.c b/app/src/split/bluetooth/central.c
-index b4b61ce7750..7363bb3e134 100644
+index 685deb5..6a2bbb5 100644
 --- a/app/src/split/bluetooth/central.c
 +++ b/app/src/split/bluetooth/central.c
-@@ -51,10 +51,15 @@ struct peripheral_slot {
+@@ -51,10 +51,21 @@ struct peripheral_slot {
      struct bt_gatt_subscribe_params subscribe_params;
      struct bt_gatt_subscribe_params sensor_subscribe_params;
      struct bt_gatt_discover_params sub_discover_params;
@@ -15,10 +15,16 @@ index b4b61ce7750..7363bb3e134 100644
      struct bt_gatt_read_params batt_lvl_read_params;
 +    // See sensor_sub_discover_params above.
 +    struct bt_gatt_discover_params batt_lvl_sub_discover_params;
++    // Battery recovery state: the handle saved at discovery (survives a failed
++    // CCC write that zeroes the subscribe params), the last level actually
++    // delivered by a read or notification, and whether a read is in flight.
++    uint16_t batt_lvl_handle;
++    uint8_t battery_level_seen;
++    bool battery_read_pending;
  #endif /* IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING) */
  #if IS_ENABLED(CONFIG_ZMK_SPLIT_PERIPHERAL_HID_INDICATORS)
      uint16_t update_hid_indicators;
-@@ -214,6 +219,14 @@ int release_peripheral_slot(int index) {
+@@ -214,6 +225,17 @@ int release_peripheral_slot(int index) {
  
      // Clean up previously discovered handles;
      slot->subscribe_params.value_handle = 0;
@@ -29,11 +35,105 @@ index b4b61ce7750..7363bb3e134 100644
 +#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 +    slot->batt_lvl_subscribe_params.value_handle = 0;
 +    slot->batt_lvl_subscribe_params.ccc_handle = 0;
++    slot->batt_lvl_handle = 0;
++    slot->battery_level_seen = 0;
++    slot->battery_read_pending = false;
 +#endif /* IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING) */
      slot->run_behavior_handle = 0;
      slot->selected_physical_layout_handle = 0;
  #if IS_ENABLED(CONFIG_ZMK_SPLIT_PERIPHERAL_HID_INDICATORS)
-@@ -535,10 +548,75 @@ static void update_peripherals_selected_physical_layout(struct k_work *_work) {
+@@ -417,6 +439,7 @@ static uint8_t split_central_battery_level_notify_func(struct bt_conn *conn,
+     LOG_DBG("[BATTERY LEVEL NOTIFICATION] data %p length %u", data, length);
+     uint8_t battery_level = ((uint8_t *)data)[0];
+     LOG_DBG("Battery level: %u", battery_level);
++    slot->battery_level_seen = battery_level;
+ 
+     struct peripheral_event_wrapper ev = {
+         .source = peripheral_slot_index_for_conn(conn),
+@@ -434,13 +457,20 @@ static uint8_t split_central_battery_level_notify_func(struct bt_conn *conn,
+ static uint8_t split_central_battery_level_read_func(struct bt_conn *conn, uint8_t err,
+                                                      struct bt_gatt_read_params *params,
+                                                      const void *data, uint16_t length) {
++    struct peripheral_slot *slot = peripheral_slot_for_conn(conn);
++
++    // Clear the in-flight flag no matter how this read completes, so the
++    // recovery poll can schedule the next attempt if this one failed.
++    if (slot != NULL) {
++        slot->battery_read_pending = false;
++    }
++
+     if (err > 0) {
+-        LOG_ERR("Error during reading peripheral battery level: %u", err);
++        LOG_ERR("Error during reading peripheral battery level: %u (recovery poll will retry)",
++                err);
+         return BT_GATT_ITER_STOP;
+     }
+ 
+-    struct peripheral_slot *slot = peripheral_slot_for_conn(conn);
+-
+     if (!slot) {
+         LOG_ERR("No peripheral state found for connection");
+         return BT_GATT_ITER_CONTINUE;
+@@ -461,6 +491,7 @@ static uint8_t split_central_battery_level_read_func(struct bt_conn *conn, uint8
+     uint8_t battery_level = ((uint8_t *)data)[0];
+ 
+     LOG_DBG("Battery level: %u", battery_level);
++    slot->battery_level_seen = battery_level;
+ 
+     struct peripheral_event_wrapper ev = {
+         .source = peripheral_slot_index_for_conn(conn),
+@@ -495,6 +526,50 @@ static int split_central_subscribe(struct bt_conn *conn, struct bt_gatt_subscrib
+     return err;
+ }
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
++/*
++ * Battery self-recovery: the initial battery read at (re)connect is the only
++ * battery data the central gets until the peripheral's next 60s BAS
++ * notification, and the peripheral pauses battery reporting entirely while
++ * idle. If that single read fails (RF or ATT error), the dongle display would
++ * sit at 0 until a keypress wakes reporting. Poll every 5s and re-read any
++ * connected peripheral whose battery level is still unknown; a no-op when
++ * everything is already current.
++ */
++static void battery_recovery_work_handler(struct k_work *_work) {
++    for (int i = 0; i < ZMK_SPLIT_BLE_PERIPHERAL_COUNT; i++) {
++        struct peripheral_slot *slot = &peripherals[i];
++
++        if (slot->state != PERIPHERAL_SLOT_STATE_CONNECTED || !slot->conn ||
++            !slot->batt_lvl_handle || slot->battery_level_seen ||
++            slot->battery_read_pending) {
++            continue;
++        }
++
++        LOG_WRN("Battery level still unknown for peripheral %d - re-reading", i);
++
++        // A failed CCC write or a lost subscription zeroes the subscribe
++        // params' value handle; restore it from the saved discovery handle
++        // and resubscribe (a no-op if the subscription is still alive).
++        slot->batt_lvl_subscribe_params.value_handle = slot->batt_lvl_handle;
++        split_central_subscribe(slot->conn, &slot->batt_lvl_subscribe_params);
++
++        slot->battery_read_pending = true;
++        int err = bt_gatt_read(slot->conn, &slot->batt_lvl_read_params);
++        if (err) {
++            slot->battery_read_pending = false;
++            LOG_WRN("Battery re-read failed for peripheral %d (err %d)", i, err);
++        }
++    }
++}
++
++K_WORK_DEFINE(battery_recovery_work, battery_recovery_work_handler);
++
++static void battery_recovery_timer_cb(struct k_timer *_timer) { k_work_submit(&battery_recovery_work); }
++
++K_TIMER_DEFINE(battery_recovery_timer, battery_recovery_timer_cb, NULL);
++#endif /* IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING) */
++
+ static int update_peripheral_selected_layout(struct peripheral_slot *slot, uint8_t layout_idx) {
+     if (slot->state != PERIPHERAL_SLOT_STATE_CONNECTED) {
+         return -ENOTCONN;
+@@ -535,10 +610,78 @@ static void update_peripherals_selected_physical_layout(struct k_work *_work) {
  K_WORK_DEFINE(update_peripherals_selected_layouts_work,
                update_peripherals_selected_physical_layout);
  
@@ -74,7 +174,10 @@ index b4b61ce7750..7363bb3e134 100644
 +#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 +    if (slot->batt_lvl_subscribe_params.value_handle) {
 +        split_central_subscribe(conn, &slot->batt_lvl_subscribe_params);
-+        bt_gatt_read(conn, &slot->batt_lvl_read_params);
++        slot->battery_read_pending = true;
++        if (bt_gatt_read(conn, &slot->batt_lvl_read_params)) {
++            slot->battery_read_pending = false;
++        }
 +    }
 +#endif /* IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING) */
 +}
@@ -109,7 +212,7 @@ index b4b61ce7750..7363bb3e134 100644
          LOG_DBG("Discover complete");
          return BT_GATT_ITER_STOP;
      }
-@@ -567,20 +636,17 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
+@@ -567,20 +710,17 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
              slot->subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
              slot->subscribe_params.notify = split_central_notify_func;
              slot->subscribe_params.value = BT_GATT_CCC_NOTIFY;
@@ -131,7 +234,7 @@ index b4b61ce7750..7363bb3e134 100644
  #endif /* ZMK_KEYMAP_HAS_SENSORS */
  #if IS_ENABLED(CONFIG_ZMK_INPUT_SPLIT)
          } else if (bt_uuid_cmp(chrc_uuid, BT_UUID_DECLARE_128(ZMK_SPLIT_BT_INPUT_EVENT_UUID)) ==
-@@ -624,18 +690,16 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
+@@ -624,18 +764,19 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
          } else if (!bt_uuid_cmp(((struct bt_gatt_chrc *)attr->user_data)->uuid,
                                  BT_UUID_BAS_BATTERY_LEVEL)) {
              LOG_DBG("Found battery level characteristics");
@@ -139,6 +242,9 @@ index b4b61ce7750..7363bb3e134 100644
 +            slot->batt_lvl_subscribe_params.disc_params = &slot->batt_lvl_sub_discover_params;
              slot->batt_lvl_subscribe_params.end_handle = slot->discover_params.end_handle;
              slot->batt_lvl_subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
++            // Remember the handle separately: a failed CCC write later zeroes
++            // the subscribe params, but recovery needs it to resubscribe.
++            slot->batt_lvl_handle = slot->batt_lvl_subscribe_params.value_handle;
              slot->batt_lvl_subscribe_params.notify = split_central_battery_level_notify_func;
              slot->batt_lvl_subscribe_params.value = BT_GATT_CCC_NOTIFY;
 -            split_central_subscribe(conn, &slot->batt_lvl_subscribe_params);
@@ -151,7 +257,7 @@ index b4b61ce7750..7363bb3e134 100644
  #endif /* IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING) */
          }
          break;
-@@ -706,8 +770,11 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
+@@ -706,8 +847,11 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
          }
      }
  #endif // IS_ENABLED(CONFIG_ZMK_INPUT_SPLIT)
@@ -165,3 +271,13 @@ index b4b61ce7750..7363bb3e134 100644
  }
  
  static uint8_t split_central_service_discovery_func(struct bt_conn *conn,
+@@ -945,6 +1089,9 @@ static void split_central_connected(struct bt_conn *conn, uint8_t conn_err) {
+ 
+     confirm_peripheral_slot_conn(conn);
+     split_central_process_connection(conn);
++    // Kick (or restart) the battery recovery poll; it no-ops for peripherals
++    // whose battery level is already known.
++    k_timer_start(&battery_recovery_timer, K_SECONDS(5), K_SECONDS(5));
+     k_work_submit(&notify_status_work);
+ }
+ 

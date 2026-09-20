@@ -31,31 +31,31 @@ ZMK 官方 issue [#3156](https://github.com/zmkfirmware/zmk/issues/3156)：
 | `config/boards/shields/k30_dongle/k30_dongle.conf` | `CONFIG_ZMK_SPLIT_BLE_PREF_TIMEOUT=1000`：连接监督超时 4s→10s，降低 2.4G 干扰下的"假掉线" |
 | `config/boards/shields/k30_dongle/k30_dongle_status_screen.c` | 增加 2 秒周期自刷新（与事件刷新同一 work 队列路径），任何错过的事件 2 秒内自愈；初始电量文案统一为 `BAT:--` |
 
-## 2026-09 后续修复：插拔 Dongle 后电量永远显示 `BAT:0?`
+## 2026-09 第三轮修复：电量读取失败自愈（真实根因，串口日志确诊）
 
-### 现象
-- 两端固件都已更新后，插拔（断电重启）Dongle，按键恢复正常，但 OLED 电量永远显示 `BAT:0?`。
-- `BAT:0?` 是状态屏的诊断态：表示"收到过电池数据但值一直为 0"，即 Dongle 的电池缓存
-  始终为 0（重连时从未读到过真实电量，2 秒自刷新每次都读到空缓存 0）。
+### 诊断过程（dongle USB 串口日志，115200）
+抓取 dongle 的 CDC 日志后发现，大部分重连其实是成功的：
+发现完整 → 订阅成功 → `BATTERY LEVEL READ: 60` → 每 60s 通知。但：
 
-### 根因
-上一轮的 #3156 补丁在 GATT 特征遍历结束（`attr == NULL`）时，**只把"没找到
-position-state（按键）特征"判定为遍历被截断**并断链重试。但 GATT 特征遍历顺序是
-position-state → … → battery（BAS 特征通常在最后）。若遍历在找到按键特征**之后**、
-电池特征**之前**被干扰截断（Dongle 断电重插后的重连正是高发场景），则：
+1. **重连后的首次电量读取是唯一的即时数据来源**，且**没有任何重试**：
+   `split_central_battery_level_read_func` 读失败（ATT/射频错误）只是打条日志就放弃；
+2. 键盘空闲 2 分钟后暂停电量上报（ZMK 行为），若首次读取失败，
+   下一次机会要等到**按键唤醒后的下一次通知**——期间屏幕一直 `BAT:0?`；
+3. 若 CCC 写失败（订阅丢失），`notify(NULL)` 回调把订阅参数清零，
+   后续重连失败后连订阅都恢复不了。
 
-- 按键订阅正常 → 按键工作，看起来"没断联"；
-- `batt_lvl_subscribe_params.value_handle == 0` → flush 跳过电池订阅与首次读取，且**永不重试**；
-- 键盘每 60s 的 BAS 通知因 Dongle 未订阅 CCC 而收不到 → 电量永远为 0 → 显示 `BAT:0?`。
+这解释了"插拔/睡眠重连后偶尔永远 BAT:0?"——不是发现流程截断（概率低），
+而是**首次读取失败 + 上报暂停 + 无重试**三者叠加（概率高得多）。
 
-### 修复
-| 文件 | 改动 |
-| --- | --- |
-| `tools/patches/0001-zmk-3156-defer-gatt-subscriptions.patch` | 遍历结束判定补全：position-state **或** 电池特征缺失都视为遍历被截断，断开重连重试（`CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING` 关闭时不受影响） |
+### 修复（全部在 central.c 补丁内，仍只需重刷 Dongle）
+- 记录发现到的电池特征句柄（`batt_lvl_handle`），不依赖可被清零的订阅参数；
+- 新增 **5 秒周期电池自愈**：对"已连接但电量未知"的外设自动重新订阅 + 重新读取，
+  读到一次真实电量后该机制自动静默（零开销）；
+- 读取回调确保 in-flight 标志在任何结果下都被清除，失败由下一轮自愈重试。
 
-修复后行为：重连时若发现流程再次被截断（无论停在电池之前还是按键之前），Dongle 会
-主动断链重连，几秒内自动完成一次完整的发现 + 订阅 + 电量读取，屏幕几秒后显示
-`BAT:xx%`。**只需重刷 Dongle 端固件**（该补丁只在 central 端生效，键盘固件无变化）。
+### 验证
+- 补丁对 pristine v0.3.0 `app/src/split/bluetooth/central.c` 干净应用（159+/12-）；
+- 串口日志确认两轮 睡眠→断开→重连 周期中电量路径完整（读到 60/61%）。
 
 ### 已知的正常行为（不是故障）
 1. **键盘 10 分钟无按键会进入深度睡眠并断开蓝牙**（`k30.conf` 的 `CONFIG_ZMK_IDLE_SLEEP_TIMEOUT=600000`）。
