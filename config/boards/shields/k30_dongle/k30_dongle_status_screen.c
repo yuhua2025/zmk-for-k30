@@ -269,28 +269,50 @@ static lv_obj_t *create_centered_label(lv_obj_t *screen, const lv_font_t *font, 
     return label;
 }
 
+/*
+ * 方向标定屏：不加载任何软件变换，也不用文字，只用几何标记。
+ * LVGL 坐标 (128x32)：
+ *   左上 1 根竖条 / 右上 2 根 / 左下 3 根 / 右下 4 根
+ *   中部 y=15 一条水平线；中心一个 4x4 方块
+ * 拍照后数每个物理角上的竖条数量，即可确定面板的镜像/翻转/旋转关系。
+ */
+static void k30_add_bar(lv_obj_t *screen, int32_t x, int32_t y, int32_t w, int32_t h)
+{
+    lv_obj_t *bar = lv_obj_create(screen);
+    lv_obj_set_size(bar, w, h);
+    lv_obj_set_pos(bar, x, y);
+    lv_obj_set_style_bg_color(bar, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(bar, 0, 0);
+    lv_obj_set_style_outline_width(bar, 0, 0);
+    lv_obj_set_style_radius(bar, 0, 0);
+    lv_obj_set_style_pad_all(bar, 0, 0);
+}
+
+static void k30_add_corner_marks(lv_obj_t *screen, int32_t x, int32_t y, int32_t count)
+{
+    for (int32_t i = 0; i < count; i++) {
+        k30_add_bar(screen, x + i * 5, y, 3, 8);
+    }
+}
+
 lv_obj_t *zmk_display_status_screen(void)
 {
-    k30_install_rotation();
-
+    /* 标定时故意不安装旋转包壳，先看原始硬件映射。 */
     lv_obj_t *screen = lv_obj_create(NULL);
 
-    /* 黑底白字：MONO10 下 white 像素点亮，black 像素熄灭。 */
     lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_style_pad_all(screen, 0, 0);
 
-    /* 主行 16px 居中；图层名 12px 居中，两行刚好放进 32px。 */
-    top_label = create_centered_label(screen, &lv_font_montserrat_16, LV_ALIGN_TOP_MID, -1,
-                                      "--- BAT:--");
-    layer_label = create_centered_label(screen, &lv_font_montserrat_12, LV_ALIGN_BOTTOM_MID, 1,
-                                        "---");
+    k30_add_corner_marks(screen, 2, 2, 1);     /* LVGL 左上 */
+    k30_add_corner_marks(screen, 118, 2, 2);   /* LVGL 右上 */
+    k30_add_corner_marks(screen, 2, 22, 3);    /* LVGL 左下 */
+    k30_add_corner_marks(screen, 108, 22, 4);  /* LVGL 右下 */
 
-    update_top_line();
-    update_layer();
-
-    k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));
+    k30_add_bar(screen, 20, 15, 88, 2);        /* 中部水平线 */
+    k30_add_bar(screen, 62, 14, 4, 4);         /* 中心方块 */
 
     return screen;
 }
