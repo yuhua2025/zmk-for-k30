@@ -33,12 +33,9 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
- * 这块 SSD1312 面板只有 segment-remap + com-invdir 能点亮，该映射会把显存
- * 内容旋转 180 度。实机验证：只做上下翻转时文字仍是左右镜像，因此这里包
- * 一层 LVGL flush 回调，在写入 SSD1306 驱动之前做完整 180 度旋转。
- *
- * 1bpp + VTILED 布局：每字节是同一列上的 8 个像素，180 度旋转既要倒序
- * 8 行块并左右换列，也要按 ry 重新计算字节内的 bit 号。
+ * 这块 SSD1312 面板只有 segment-remap + com-invdir 能点亮。实机反色诊断确认
+ * flush 回调确实被调用；180 度补偿后画面只剩左右镜像，说明面板实际映射是
+ * 上下翻转。因此这里只做 Y 翻转：8 行块倒序，并把字节内 bit 号取反。
  */
 #if LV_COLOR_DEPTH == 1
 #define K30_OLED_WIDTH  128
@@ -49,13 +46,12 @@ static void (*k30_flush_orig)(lv_disp_drv_t *disp_drv, const lv_area_t *area,
 static uint8_t k30_rotate_buf[K30_OLED_WIDTH * K30_OLED_HEIGHT / 8];
 static bool k30_msb_first;
 
-static void k30_rotate_180_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
-                                    lv_color_t *color_p)
+static void k30_vertical_flip_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
+                                       lv_color_t *color_p)
 {
     const int32_t w = lv_area_get_width(area);
     const int32_t h = lv_area_get_height(area);
     lv_disp_t *disp = lv_disp_get_default();
-    const int32_t xres = (disp != NULL) ? lv_disp_get_hor_res(disp) : K30_OLED_WIDTH;
     const int32_t yres = (disp != NULL) ? lv_disp_get_ver_res(disp) : K30_OLED_HEIGHT;
 
     if (k30_flush_orig == NULL || w <= 0 || h <= 0 ||
@@ -71,29 +67,23 @@ static void k30_rotate_180_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *ar
 
     for (int32_t ry = 0; ry < h; ry++) {
         for (int32_t rx = 0; rx < w; rx++) {
-            const int32_t sx = w - 1 - rx;
             const int32_t sy = h - 1 - ry;
             const uint8_t src_bit = k30_msb_first ? (uint8_t)(7 - (sy & 7)) : (uint8_t)(sy & 7);
-            const uint8_t dst_bit = k30_msb_first ? (uint8_t)(7 - (ry & 7)) : (uint8_t)(ry & 7);
+            const uint8_t dst_bit = (uint8_t)(7 - src_bit);
 
-            if ((src[sx + ((sy >> 3) * w)] & (1U << src_bit)) != 0U) {
-                k30_rotate_buf[rx + ((ry >> 3) * w)] |= (uint8_t)(1U << dst_bit);
+            if ((src[rx + ((sy >> 3) * w)] & (1U << src_bit)) != 0U) {
+                k30_rotate_buf[rx + ((ry >> 3) * w)] |= (1U << dst_bit);
             }
         }
     }
 
-    lv_area_t rotated_area;
-    rotated_area.x1 = xres - 1 - area->x2;
-    rotated_area.x2 = xres - 1 - area->x1;
-    rotated_area.y1 = yres - 1 - area->y2;
-    rotated_area.y2 = yres - 1 - area->y1;
+    lv_area_t flipped_area;
+    flipped_area.x1 = area->x1;
+    flipped_area.x2 = area->x2;
+    flipped_area.y1 = yres - 1 - area->y2;
+    flipped_area.y2 = yres - 1 - area->y1;
 
-    /* 诊断：若本回调真的被调用，整屏反色为白底黑字。 */
-    for (size_t i = 0; i < sizeof(k30_rotate_buf); i++) {
-        k30_rotate_buf[i] = (uint8_t)~k30_rotate_buf[i];
-    }
-
-    k30_flush_orig(disp_drv, &rotated_area, (lv_color_t *)k30_rotate_buf);
+    k30_flush_orig(disp_drv, &flipped_area, (lv_color_t *)k30_rotate_buf);
 }
 
 static void k30_install_rotation(void)
@@ -113,8 +103,7 @@ static void k30_install_rotation(void)
     }
 
     k30_flush_orig = disp->driver->flush_cb;
-    disp->driver->flush_cb = k30_rotate_180_flush_cb;
-    LOG_INF("K30 ROT180 flush installed");
+    disp->driver->flush_cb = k30_vertical_flip_flush_cb;
 }
 #else
 static void k30_install_rotation(void) {}
@@ -190,8 +179,15 @@ static void update_top_line(void)
 
 static void update_layer(void)
 {
-    /* 临时版本标记：看到 R180 才说明这个固件真的在跑。 */
-    lv_label_set_text(layer_label, "R180");
+    char text[16];
+    const char *name = zmk_keymap_layer_name(zmk_keymap_highest_layer_active());
+
+    if (name == NULL || name[0] == '\0') {
+        snprintf(text, sizeof(text), "L%d", zmk_keymap_highest_layer_active());
+        name = text;
+    }
+
+    lv_label_set_text(layer_label, name);
 }
 
 static void refresh_work_handler(struct k_work *work)
