@@ -44,9 +44,11 @@
 		compatible = "solomon,ssd1306fb";
 		reg = <0x3c>;
 		/*
-		 * 这组参数是实机验证过能点亮的配置，不能改。
-		 * 面板可见区域实际只有 64x16，128x32 GDRAM 的折叠补偿
-		 * 在 status screen 的 flush 回调里做，不再动这里。
+		 * 实机验证过能点亮的硬件参数（128x32 / mux 31 / com-sequential），
+		 * 不要改。
+		 * 方向：不带 segment-remap / com-invdir 时帧才是正立的；
+		 * 两个标志同时开 = 整屏旋转 180°（r481/r485 实机照片已证实），
+		 * 显示方向问题在驱动层修，不做任何 flush 补偿。
 		 */
 		width = <128>;
 		height = <32>;
@@ -54,8 +56,6 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
-		segment-remap;
-		com-invdir;
 		com-sequential;
 		prechargep = <0x22>;
 	};
