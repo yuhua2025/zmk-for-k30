@@ -94,11 +94,11 @@ jobs:
       - name: Upload k30 peripheral firmware
         uses: actions/upload-artifact@v4
         with:
-          name: k30-peripheral-firmware
+          name: k30-peripheral-firmware-r${{ github.run_number }}
           path: zmk/build_k30/zephyr/zmk.uf2
 
       - name: Upload k30 dongle firmware
         uses: actions/upload-artifact@v4
         with:
-          name: k30-dongle-firmware
+          name: k30-dongle-firmware-r${{ github.run_number }}
           path: zmk/build_dongle/zephyr/zmk.uf2
