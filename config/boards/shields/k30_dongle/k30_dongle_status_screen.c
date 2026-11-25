@@ -33,24 +33,27 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
- * 实机照片测得的物理映射（r481 无变换固件）：
- *   物理面板只有 64 列 x 32 行；GDRAM 左半 (c=0..63) 和右半 (c=64..127)
- *   都镜像折叠到这 64 列上：p = 63 - (c mod 64)；同时整屏上下翻转：q = 31 - r。
- *   证据：居中的 "BLE 0?" 显示成左右两个各自旋转 180 度的半段，
- *   中间的空格正好跨在折叠边界 c=64 上。
+ * 实机照片测得的完整物理映射（r481/r482 两轮确认）：
+ *   物理面板只有 64 列 x 16 行。SSD1306 兼容驱动仍按 128x32 GDRAM 写入：
+ *     - 列方向：GDRAM 左半 (c=0..63) 与右半 (c=64..127) 都镜像折叠到同一组
+ *       64 条物理列：p = 63 - (c mod 64)。
+ *     - 行方向：GDRAM 32 行按 q' = r mod 16 折叠到 16 条物理行
+ *       （r 与 r+16 落在同一行；r482 里两行 label 叠加且上下颠倒，
+ *       标定图里横线在竖条带下方，都只有这个模型能同时解释）。
  *
  * 因此 overlay 必须保持已验证可点亮的 128x32/mux31 配置不动；
- * 这里在 flush 回调里做整帧补偿：
- *   1. 把 LVGL 的每个局部 area 累积进持久 128x32 影子帧（不清理，
- *      这样局部刷新不会把其余内容抹掉）；
- *   2. 最后一个 area 到齐后，取画面中央 64 列窗口，按
- *      (p,q) -> GDRAM (63-p, 31-q) 和 (127-p, 31-q) 双写（两半物理重叠，
- *      必须写一致，否则残留半段会叠加鬼影），整帧一次 display_write。
+ * flush 回调做整帧补偿：
+ *   1. 把 LVGL 每个 area 累积进持久 128x32 影子帧（不清理）；
+ *   2. flush_is_last 时取中央 64 列 x 前 16 行窗口，按
+ *      (p,q) -> GDRAM (63-p, q) 和 (127-p, q) 双写一致值；
+ *      GDRAM 第 16..31 行保持全 0，避免折叠叠影。
+ * UI 内容全部限制在 16 行内：单行 16px，电量和输出方式每 2 秒交替。
  */
 #if LV_COLOR_DEPTH == 1
 #define K30_FRAME_W 128
 #define K30_FRAME_H 32
 #define K30_PANEL_W 64
+#define K30_PANEL_H 16
 #define K30_WINDOW_X0 ((K30_FRAME_W - K30_PANEL_W) / 2)
 
 static const struct device *k30_display_dev;
@@ -124,12 +127,12 @@ static void k30_frame_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
 
     memset(k30_out, 0, sizeof(k30_out));
 
-    for (int32_t q = 0; q < K30_FRAME_H; q++) {
+    for (int32_t q = 0; q < K30_PANEL_H; q++) {
         for (int32_t p = 0; p < K30_PANEL_W; p++) {
             const bool on = k30_shadow_get(K30_WINDOW_X0 + p, q);
 
-            k30_out_set(K30_PANEL_W - 1 - p, K30_FRAME_H - 1 - q, on);
-            k30_out_set(K30_FRAME_W - 1 - p, K30_FRAME_H - 1 - q, on);
+            k30_out_set(K30_PANEL_W - 1 - p, q, on);
+            k30_out_set(K30_FRAME_W - 1 - p, q, on);
         }
     }
 
@@ -170,8 +173,8 @@ static void k30_install_frame_flush(void)
 static void k30_install_frame_flush(void) {}
 #endif /* LV_COLOR_DEPTH == 1 */
 
-static lv_obj_t *battery_label;
-static lv_obj_t *output_label;
+static lv_obj_t *status_label;
+static bool show_output;
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
@@ -225,24 +228,24 @@ static const char *get_output_text(void)
     }
 }
 
-static void update_labels(void)
+static void update_label(void)
 {
     char bat[8];
 
     get_battery_text(bat, sizeof(bat));
-    lv_label_set_text(battery_label, bat);
-    lv_label_set_text(output_label, get_output_text());
+    lv_label_set_text(status_label, show_output ? get_output_text() : bat);
 }
 
 static void refresh_work_handler(struct k_work *work)
 {
     (void)work;
-    update_labels();
+    show_output = !show_output;
+    update_label();
 }
 
 K_WORK_DEFINE(refresh_work, refresh_work_handler);
 
-/* 每 2 秒自愈刷新一次，避免事件和屏幕初始化竞争导致显示不同步。 */
+/* 每 2 秒交替显示电量 / 输出方式，同时兼作自愈刷新。 */
 static void refresh_tick_cb(struct k_timer *_timer)
 {
     (void)_timer;
@@ -259,6 +262,7 @@ static int peripheral_battery_listener(const zmk_event_t *eh)
 
     if (ev != NULL) {
         apply_battery_level(ev->state_of_charge);
+        show_output = false;
         k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     }
 
@@ -272,6 +276,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 static int endpoint_listener(const zmk_event_t *eh)
 {
     (void)eh;
+    show_output = true;
     k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     return 0;
 }
@@ -294,18 +299,6 @@ static int activity_listener(const zmk_event_t *eh)
 ZMK_LISTENER(dongle_display_activity, activity_listener);
 ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
-static lv_obj_t *create_centered_label(lv_obj_t *screen, const lv_font_t *font, int32_t y,
-                                       const char *text)
-{
-    lv_obj_t *label = lv_label_create(screen);
-    lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(label, LV_OPA_TRANSP, 0);
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, y);
-    lv_label_set_text(label, text);
-    return label;
-}
-
 lv_obj_t *zmk_display_status_screen(void)
 {
     k30_install_frame_flush();
@@ -319,13 +312,17 @@ lv_obj_t *zmk_display_status_screen(void)
     lv_obj_set_style_pad_all(screen, 0, 0);
 
     /*
-     * 物理面板 64 列宽：主行用 16px 只放电量，副行用 12px 放输出方式，
-     * 保证最长内容都落在中央 64 列窗口内。
+     * 物理面板只有 16 行：单行 montserrat_16，电量 / 输出方式每 2 秒交替，
+     * 内容水平居中于中央 64 列窗口。
      */
-    battery_label = create_centered_label(screen, &lv_font_montserrat_16, 0, "--");
-    output_label = create_centered_label(screen, &lv_font_montserrat_12, 19, "---");
+    status_label = lv_label_create(screen);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(status_label, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(status_label, LV_OPA_TRANSP, 0);
+    lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(status_label, "--");
 
-    update_labels();
+    update_label();
     k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));
 
     return screen;
