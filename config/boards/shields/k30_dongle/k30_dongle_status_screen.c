@@ -109,6 +109,7 @@ static void k30_install_rotation(void)
 
     k30_flush_orig = disp->driver->flush_cb;
     disp->driver->flush_cb = k30_rotate_180_flush_cb;
+    LOG_INF("K30 ROT180 flush installed");
 }
 #else
 static void k30_install_rotation(void) {}
@@ -184,15 +185,8 @@ static void update_top_line(void)
 
 static void update_layer(void)
 {
-    char text[16];
-    const char *name = zmk_keymap_layer_name(zmk_keymap_highest_layer_active());
-
-    if (name == NULL || name[0] == '\0') {
-        snprintf(text, sizeof(text), "L%d", zmk_keymap_highest_layer_active());
-        name = text;
-    }
-
-    lv_label_set_text(layer_label, name);
+    /* 临时版本标记：看到 R180 才说明这个固件真的在跑。 */
+    lv_label_set_text(layer_label, "R180");
 }
 
 static void refresh_work_handler(struct k_work *work)
