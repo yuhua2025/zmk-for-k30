@@ -24,12 +24,12 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-static lv_obj_t *battery_label;
-static lv_obj_t *battery_label_b;  /* bold shadow */
-static lv_obj_t *output_label;
-static lv_obj_t *output_label_b;
+/* Top line: "<output>  <battery>", centered; bottom line: layer name, centered.
+ * Bold look via a 1px offset duplicate label behind the main one. */
+static lv_obj_t *top_label;
+static lv_obj_t *top_label_b;  /* bold shadow */
 static lv_obj_t *layer_label;
-static lv_obj_t *layer_label_b;
+static lv_obj_t *layer_label_b;  /* bold shadow */
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
@@ -58,9 +58,7 @@ static void apply_battery_level(uint8_t level) {
     have_battery = true;
 }
 
-static void update_battery(void) {
-    char text[16];
-
+static void get_battery_text(char *buf, size_t len) {
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     uint8_t level = 0;
     if (zmk_split_central_get_peripheral_battery_level(0, &level) == 0) {
@@ -69,35 +67,36 @@ static void update_battery(void) {
 #endif
 
     if (!battery_received_any) {
-        snprintf(text, sizeof(text), "BAT:--");
+        snprintf(buf, len, "BAT:--");
     } else if (!have_battery) {
-        snprintf(text, sizeof(text), "BAT:0?");
+        snprintf(buf, len, "BAT:0?");
     } else {
-        snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
+        snprintf(buf, len, "BAT:%d%%", battery_level);
     }
-
-    lv_label_set_text(battery_label, text);
-    lv_label_set_text(battery_label_b, text);
 }
 
-static void update_output(void) {
+static const char *get_output_text(void) {
     struct zmk_endpoint_instance selected = zmk_endpoints_selected();
-    const char *text = "?";
 
     switch (selected.transport) {
     case ZMK_TRANSPORT_USB:
-        text = "USB";
-        break;
+        return "USB";
     case ZMK_TRANSPORT_BLE:
-        text = "BLE";
-        break;
+        return "BLE";
     default:
-        text = "---";
-        break;
+        return "---";
     }
+}
 
-    lv_label_set_text(output_label, text);
-    lv_label_set_text(output_label_b, text);
+static void update_top_line(void) {
+    char bat[12];
+    char text[24];
+
+    get_battery_text(bat, sizeof(bat));
+    snprintf(text, sizeof(text), "%s  %s", get_output_text(), bat);
+
+    lv_label_set_text(top_label, text);
+    lv_label_set_text(top_label_b, text);
 }
 
 static void update_layer(void) {
@@ -113,8 +112,7 @@ static void update_layer(void) {
 }
 
 static void refresh_work_handler(struct k_work *work) {
-    update_battery();
-    update_output();
+    update_top_line();
     update_layer();
 }
 
@@ -176,6 +174,26 @@ static int activity_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(dongle_display_activity, activity_listener);
 ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
+/* 创建居中的加粗标签：1px 偏移阴影 + 主标签，黑底白字。
+ * shadow/label 输出主标签与阴影标签指针，后续刷新文本时两份都要更新。 */
+static void create_centered_label(lv_obj_t *screen, lv_align_t align, int32_t x, int32_t y,
+                                  const char *text, lv_obj_t **label_out, lv_obj_t **shadow_out) {
+    lv_obj_t *shadow = lv_label_create(screen);
+    lv_obj_set_style_text_font(shadow, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(shadow, lv_color_white(), 0);
+    lv_obj_align(shadow, align, x + 1, y + 1);
+    lv_label_set_text(shadow, text);
+
+    lv_obj_t *label = lv_label_create(screen);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_align(label, align, x, y);
+    lv_label_set_text(label, text);
+
+    *label_out = label;
+    *shadow_out = shadow;
+}
+
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
@@ -185,46 +203,17 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_style_pad_all(screen, 0, 0);
 
-    /* Output label - top left, 16px, bold via 1px offset shadow */
-    output_label = lv_label_create(screen);
-    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 2, 7);
-    lv_obj_set_style_text_font(output_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(output_label, lv_color_white(), 0);
-    lv_label_set_text(output_label, "---");
-    output_label_b = lv_label_create(screen);
-    lv_obj_align(output_label_b, LV_ALIGN_TOP_LEFT, 3, 7);
-    lv_obj_set_style_text_font(output_label_b, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(output_label_b, lv_color_white(), 0);
-    lv_label_set_text(output_label_b, "---");
+    /* Top line (output + battery) - horizontally centered, 16px; y 微调避免与下行重叠 */
+    create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -2, "---  BAT:--", &top_label,
+                          &top_label_b);
 
-    /* Battery label - top right, 16px, bold via 1px offset shadow */
-    battery_label = lv_label_create(screen);
-    lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 7);
-    lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(battery_label, lv_color_white(), 0);
-    lv_label_set_text(battery_label, "BAT:--");
-    battery_label_b = lv_label_create(screen);
-    lv_obj_align(battery_label_b, LV_ALIGN_TOP_RIGHT, -1, 7);
-    lv_obj_set_style_text_font(battery_label_b, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(battery_label_b, lv_color_white(), 0);
-    lv_label_set_text(battery_label_b, "BAT:--");
-
-    /* Layer label - bottom center, 16px, bold via 1px offset shadow */
-    layer_label = lv_label_create(screen);
-    lv_obj_align(layer_label, LV_ALIGN_BOTTOM_MID, 0, -2);
-    lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(layer_label, lv_color_white(), 0);
-    lv_label_set_text(layer_label, "---");
-    layer_label_b = lv_label_create(screen);
-    lv_obj_align(layer_label_b, LV_ALIGN_BOTTOM_MID, 1, -2);
-    lv_obj_set_style_text_font(layer_label_b, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(layer_label_b, lv_color_white(), 0);
-    lv_label_set_text(layer_label_b, "---");
+    /* Bottom line (layer name) - horizontally centered, 16px */
+    create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, -2, "---", &layer_label,
+                          &layer_label_b);
 
     /* Initial update */
-    update_output();
+    update_top_line();
     update_layer();
-    update_battery();
 
     /* Start the periodic self-healing refresh */
     k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));
