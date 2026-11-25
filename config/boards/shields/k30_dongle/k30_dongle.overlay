@@ -49,10 +49,12 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
-		/* 方向：不加 segment-remap / com-invdir = 不翻转，画面正向。
-		 * COM 引脚用 alternative(0x12)：不加 com-sequential。
-		 * 注意：这块屏在 normal 扫描 + sequential(0x02) 下整屏黑，
-		 * 所以 com-sequential 必须保持关闭。 */
+		/* 这块屏只有 remap+invdir 能出图（其它组合整屏黑），但它同时把画面
+		 * 翻成 180°。方向改由驱动层像素翻转修正：
+		 * tools/patch_lvgl_mono_rotate.py（CI 构建时给 LVGL mono flush 打补丁）。 */
+		segment-remap;
+		com-invdir;
+		com-sequential;
 		prechargep = <0x22>;
 	};
 };
