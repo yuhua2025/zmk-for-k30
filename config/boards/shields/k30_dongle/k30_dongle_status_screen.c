@@ -11,7 +11,6 @@
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
-#include <zephyr/drivers/display.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -33,269 +32,13 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
- * 标定图结论：
- * 面板实际可见像素是 64x16，但驱动/GDRAM 必须保持 128x32 + mux31 才能点亮。
- * 128x32 GDRAM 在 X/Y 两个方向折叠：物理像素 (p,q) 会同时收到 GDRAM 的
- * (p,q)、(127-p,q)、(p,31-q)、(127-p,31-q)。所以之前无论做 180° 还是 Y-only
- * 变换都会变成叠影/错乱，改 overlay 到 64x16 则会直接不显示。
- *
- * 现在直接维护 64x16 逻辑 framebuffer，用内置 5x7 字形画两行居中文字；
- * 写屏前把逻辑帧向四个镜像位置各复制一份展开成 128x32 GDRAM，折叠后
- * 正好还原原图。LVGL 只负责提供 screen 和触发刷新，不再参与绘制。
+ * 这块 SSD1312 的 GDRAM 存在折叠映射，任何在 flush 回调里做的旋转/镜像
+ * 都会把文字拆成叠加乱码；改 overlay 到 64x16 又会直接不显示。
+ * 因此这里恢复 Zephyr/ZMK 标准 LVGL 渲染路径，不做任何 flush 变换，
+ * 只在 LVGL 层做黑底白字、放大、居中，并把内容限制在可见的前 16 行。
  */
-#if LV_COLOR_DEPTH == 1
-#define K30_OLED_WIDTH  64
-#define K30_OLED_HEIGHT 16
-#define K30_OLED_STRIDE K30_OLED_WIDTH
 
-#define K30_GDRAM_WIDTH  128
-#define K30_GDRAM_HEIGHT 32
-#define K30_GDRAM_STRIDE K30_GDRAM_WIDTH
-
-#define K30_GLYPH_W 5
-#define K30_GLYPH_H 7
-#define K30_CHAR_ADVANCE (K30_GLYPH_W + 1)
-
-static const struct device *k30_display_dev;
-static uint8_t k30_pixels[K30_OLED_WIDTH * K30_OLED_HEIGHT / 8];
-static uint8_t k30_gdram[K30_GDRAM_WIDTH * K30_GDRAM_HEIGHT / 8];
-static bool k30_flush_installed;
-static lv_obj_t *k30_status_screen;
-
-K_MUTEX_DEFINE(k30_frame_mutex);
-
-static const uint8_t k30_glyph_space[K30_GLYPH_W] = {0x00, 0x00, 0x00, 0x00, 0x00};
-static const uint8_t k30_glyph_dash[K30_GLYPH_W] = {0x00, 0x00, 0x0E, 0x00, 0x00};
-static const uint8_t k30_glyph_colon[K30_GLYPH_W] = {0x00, 0x0C, 0x0C, 0x00, 0x00};
-static const uint8_t k30_glyph_percent[K30_GLYPH_W] = {0x23, 0x13, 0x08, 0x64, 0x62};
-static const uint8_t k30_glyph_unknown[K30_GLYPH_W] = {0x3E, 0x51, 0x49, 0x45, 0x3E};
-
-static const uint8_t k30_glyph_0[K30_GLYPH_W] = {0x3E, 0x51, 0x49, 0x45, 0x3E};
-static const uint8_t k30_glyph_1[K30_GLYPH_W] = {0x00, 0x42, 0x7F, 0x40, 0x00};
-static const uint8_t k30_glyph_2[K30_GLYPH_W] = {0x42, 0x61, 0x51, 0x49, 0x46};
-static const uint8_t k30_glyph_3[K30_GLYPH_W] = {0x21, 0x41, 0x45, 0x4B, 0x31};
-static const uint8_t k30_glyph_4[K30_GLYPH_W] = {0x18, 0x14, 0x12, 0x7F, 0x10};
-static const uint8_t k30_glyph_5[K30_GLYPH_W] = {0x27, 0x45, 0x45, 0x45, 0x39};
-static const uint8_t k30_glyph_6[K30_GLYPH_W] = {0x3C, 0x4A, 0x49, 0x49, 0x30};
-static const uint8_t k30_glyph_7[K30_GLYPH_W] = {0x01, 0x71, 0x09, 0x05, 0x03};
-static const uint8_t k30_glyph_8[K30_GLYPH_W] = {0x36, 0x49, 0x49, 0x49, 0x36};
-static const uint8_t k30_glyph_9[K30_GLYPH_W] = {0x06, 0x49, 0x49, 0x29, 0x1E};
-
-static const uint8_t k30_glyph_A[K30_GLYPH_W] = {0x7E, 0x11, 0x11, 0x11, 0x7E};
-static const uint8_t k30_glyph_B[K30_GLYPH_W] = {0x7F, 0x49, 0x49, 0x49, 0x36};
-static const uint8_t k30_glyph_C[K30_GLYPH_W] = {0x3E, 0x41, 0x41, 0x41, 0x22};
-static const uint8_t k30_glyph_E[K30_GLYPH_W] = {0x7F, 0x49, 0x49, 0x49, 0x41};
-static const uint8_t k30_glyph_F[K30_GLYPH_W] = {0x7F, 0x09, 0x09, 0x09, 0x01};
-static const uint8_t k30_glyph_L[K30_GLYPH_W] = {0x40, 0x40, 0x40, 0x40, 0x7F};
-static const uint8_t k30_glyph_N[K30_GLYPH_W] = {0x7F, 0x20, 0x18, 0x04, 0x7F};
-static const uint8_t k30_glyph_S[K30_GLYPH_W] = {0x46, 0x49, 0x49, 0x49, 0x31};
-static const uint8_t k30_glyph_T[K30_GLYPH_W] = {0x01, 0x01, 0x7F, 0x01, 0x01};
-static const uint8_t k30_glyph_U[K30_GLYPH_W] = {0x7F, 0x40, 0x40, 0x40, 0x7F};
-
-static char k30_upper(char c)
-{
-    if (c >= 'a' && c <= 'z') {
-        return (char)(c - 'a' + 'A');
-    }
-    return c;
-}
-
-static const uint8_t *k30_glyph(char c)
-{
-    switch (k30_upper(c)) {
-    case ' ':
-        return k30_glyph_space;
-    case '-':
-        return k30_glyph_dash;
-    case ':':
-        return k30_glyph_colon;
-    case '%':
-        return k30_glyph_percent;
-    case '0':
-        return k30_glyph_0;
-    case '1':
-        return k30_glyph_1;
-    case '2':
-        return k30_glyph_2;
-    case '3':
-        return k30_glyph_3;
-    case '4':
-        return k30_glyph_4;
-    case '5':
-        return k30_glyph_5;
-    case '6':
-        return k30_glyph_6;
-    case '7':
-        return k30_glyph_7;
-    case '8':
-        return k30_glyph_8;
-    case '9':
-        return k30_glyph_9;
-    case 'A':
-        return k30_glyph_A;
-    case 'B':
-        return k30_glyph_B;
-    case 'C':
-        return k30_glyph_C;
-    case 'E':
-        return k30_glyph_E;
-    case 'F':
-        return k30_glyph_F;
-    case 'L':
-        return k30_glyph_L;
-    case 'N':
-        return k30_glyph_N;
-    case 'S':
-        return k30_glyph_S;
-    case 'T':
-        return k30_glyph_T;
-    case 'U':
-        return k30_glyph_U;
-    default:
-        return k30_glyph_unknown;
-    }
-}
-
-static void k30_set_pixel(int32_t x, int32_t y, bool on)
-{
-    if (x < 0 || x >= K30_OLED_WIDTH || y < 0 || y >= K30_OLED_HEIGHT) {
-        return;
-    }
-
-    uint8_t *byte = &k30_pixels[x + (y >> 3) * K30_OLED_STRIDE];
-    const uint8_t bit = (uint8_t)BIT(y & 7);
-
-    if (on) {
-        *byte |= bit;
-    } else {
-        *byte &= (uint8_t)~bit;
-    }
-}
-
-static void k30_draw_char(char c, int32_t x, int32_t y)
-{
-    const uint8_t *glyph = k30_glyph(c);
-
-    for (int32_t col = 0; col < K30_GLYPH_W; col++) {
-        for (int32_t row = 0; row < K30_GLYPH_H; row++) {
-            if ((glyph[col] & BIT(row)) != 0U) {
-                k30_set_pixel(x + col, y + row, true);
-            }
-        }
-    }
-}
-
-static int32_t k30_text_width(const char *text)
-{
-    if (text == NULL || text[0] == '\0') {
-        return 0;
-    }
-
-    return (int32_t)strlen(text) * K30_CHAR_ADVANCE - 1;
-}
-
-static void k30_draw_centered(const char *text, int32_t y)
-{
-    const int32_t width = k30_text_width(text);
-    int32_t x = (K30_OLED_WIDTH - width) / 2;
-
-    if (x < 0) {
-        x = 0;
-    }
-
-    for (int32_t i = 0; text[i] != '\0'; i++) {
-        k30_draw_char(text[i], x + i * K30_CHAR_ADVANCE, y);
-    }
-}
-
-static void k30_set_gdram(int32_t x, int32_t y, bool on)
-{
-    if (x < 0 || x >= K30_GDRAM_WIDTH || y < 0 || y >= K30_GDRAM_HEIGHT) {
-        return;
-    }
-
-    uint8_t *byte = &k30_gdram[x + (y >> 3) * K30_GDRAM_STRIDE];
-    const uint8_t bit = (uint8_t)BIT(y & 7);
-
-    if (on) {
-        *byte |= bit;
-    } else {
-        *byte &= (uint8_t)~bit;
-    }
-}
-
-/*
- * 实机标定：物理像素 (p,q) 会同时收到 GDRAM 的
- * (p,q)、(127-p,q)、(p,31-q)、(127-p,31-q) 四个位置。
- * 因此把 64x16 逻辑帧向四个镜像位置各写一份，折叠后正好得到原图。
- */
-static void k30_expand_gdram(void)
-{
-    memset(k30_gdram, 0, sizeof(k30_gdram));
-
-    for (int32_t y = 0; y < K30_OLED_HEIGHT; y++) {
-        for (int32_t x = 0; x < K30_OLED_WIDTH; x++) {
-            const uint8_t *src = &k30_pixels[x + (y >> 3) * K30_OLED_STRIDE];
-            const bool on = (*src & BIT(y & 7)) != 0U;
-
-            k30_set_gdram(x, y, on);
-            k30_set_gdram(K30_GDRAM_WIDTH - 1 - x, y, on);
-            k30_set_gdram(x, K30_GDRAM_HEIGHT - 1 - y, on);
-            k30_set_gdram(K30_GDRAM_WIDTH - 1 - x, K30_GDRAM_HEIGHT - 1 - y, on);
-        }
-    }
-}
-
-static void k30_write_gdram(void)
-{
-    if (k30_display_dev == NULL) {
-        return;
-    }
-
-    struct display_buffer_descriptor desc = {
-        .buf_size = sizeof(k30_gdram),
-        .width = K30_GDRAM_WIDTH,
-        .height = K30_GDRAM_HEIGHT,
-        .pitch = K30_GDRAM_STRIDE,
-    };
-
-    k_mutex_lock(&k30_frame_mutex, K_FOREVER);
-    (void)display_write(k30_display_dev, 0, 0, &desc, k30_gdram);
-    k_mutex_unlock(&k30_frame_mutex);
-}
-
-static void k30_frame_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
-                               lv_color_t *color_p)
-{
-    (void)area;
-    (void)color_p;
-
-    k30_write_gdram();
-    lv_disp_flush_ready(disp_drv);
-}
-
-static void k30_install_framebuffer(void)
-{
-    if (k30_flush_installed) {
-        return;
-    }
-
-    lv_disp_t *disp = lv_disp_get_default();
-    if (disp == NULL || disp->driver == NULL) {
-        return;
-    }
-
-    k30_display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
-    if (!device_is_ready(k30_display_dev)) {
-        return;
-    }
-
-    disp->driver->flush_cb = k30_frame_flush_cb;
-    k30_flush_installed = true;
-}
-#else
-static void k30_install_framebuffer(void) {}
-#endif /* LV_COLOR_DEPTH == 1 */
+static lv_obj_t *status_label;
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
@@ -327,28 +70,12 @@ static void get_battery_text(char *buf, size_t len)
 #endif
 
     if (!battery_received_any) {
-        snprintf(buf, len, "BAT:--");
+        snprintf(buf, len, "--");
     } else if (!have_battery) {
-        snprintf(buf, len, "BAT:0?");
+        snprintf(buf, len, "0?");
     } else {
-        snprintf(buf, len, "BAT:%d%%", battery_level);
+        snprintf(buf, len, "%d%%", battery_level);
     }
-}
-
-static void get_battery_short(char *buf, size_t len)
-{
-    char full[12];
-
-    get_battery_text(full, sizeof(full));
-
-    const char *value = strstr(full, "BAT:");
-    if (value != NULL) {
-        value += 4;
-    } else {
-        value = full;
-    }
-
-    snprintf(buf, len, "%s", value);
 }
 
 static const char *get_output_text(void)
@@ -365,45 +92,20 @@ static const char *get_output_text(void)
     }
 }
 
-#if LV_COLOR_DEPTH == 1
-static void k30_render_status(void)
+static void update_status(void)
 {
     char bat[8];
-    char top[12];
-    char layer[8];
+    char text[16];
 
-    get_battery_short(bat, sizeof(bat));
-    snprintf(top, sizeof(top), "%s %s", get_output_text(), bat);
-
-    const char *name = zmk_keymap_layer_name(zmk_keymap_highest_layer_active());
-    if (name == NULL || name[0] == '\0') {
-        snprintf(layer, sizeof(layer), "L%d", zmk_keymap_highest_layer_active());
-    } else {
-        snprintf(layer, sizeof(layer), "%s", name);
-    }
-
-    k_mutex_lock(&k30_frame_mutex, K_FOREVER);
-    memset(k30_pixels, 0, sizeof(k30_pixels));
-    k30_draw_centered(top, 1);
-    k30_draw_centered(layer, 9);
-    k30_expand_gdram();
-    k_mutex_unlock(&k30_frame_mutex);
-
-    /* 直接写一次，确保即使 LVGL 没有触发刷新也能立刻显示。 */
-    k30_write_gdram();
-
-    if (k30_status_screen != NULL) {
-        lv_obj_invalidate(k30_status_screen);
-    }
+    get_battery_text(bat, sizeof(bat));
+    snprintf(text, sizeof(text), "%s %s", get_output_text(), bat);
+    lv_label_set_text(status_label, text);
 }
-#else
-static void k30_render_status(void) {}
-#endif /* LV_COLOR_DEPTH == 1 */
 
 static void refresh_work_handler(struct k_work *work)
 {
     (void)work;
-    k30_render_status();
+    update_status();
 }
 
 K_WORK_DEFINE(refresh_work, refresh_work_handler);
@@ -435,16 +137,6 @@ ZMK_LISTENER(peripheral_battery, peripheral_battery_listener);
 ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 #endif
 
-static int layer_listener(const zmk_event_t *eh)
-{
-    (void)eh;
-    k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
-    return 0;
-}
-
-ZMK_LISTENER(dongle_display_layer, layer_listener);
-ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
-
 static int endpoint_listener(const zmk_event_t *eh)
 {
     (void)eh;
@@ -472,18 +164,23 @@ ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
 lv_obj_t *zmk_display_status_screen(void)
 {
-    k30_install_framebuffer();
+    lv_obj_t *screen = lv_obj_create(NULL);
 
-    k30_status_screen = lv_obj_create(NULL);
+    /* 黑底白字：MONO10 下 white 像素点亮，black 像素熄灭。 */
+    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(screen, 0, 0);
+    lv_obj_set_style_pad_all(screen, 0, 0);
 
-    lv_obj_set_style_bg_color(k30_status_screen, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(k30_status_screen, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(k30_status_screen, 0, 0);
-    lv_obj_set_style_pad_all(k30_status_screen, 0, 0);
+    status_label = lv_label_create(screen);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(status_label, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(status_label, LV_OPA_TRANSP, 0);
+    /* 内容放在可见的前 16 行内，水平居中。 */
+    lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 0);
 
-    k30_render_status();
-
+    update_status();
     k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));
 
-    return k30_status_screen;
+    return screen;
 }
