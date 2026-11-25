@@ -34,25 +34,31 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
  * 标定图结论：
- * 面板实际可见像素是 64x16，但 SSD1306/SSD1312 GDRAM 按 128x32 写入时会
- * 在 X 和 Y 两个方向折叠：物理像素 p/q 会同时收到 GDRAM 的 p 与 127-p、
- * q 与 31-q。所以之前无论做 180° 还是 Y-only 变换，都会变成叠影/错乱。
+ * 面板实际可见像素是 64x16，但驱动/GDRAM 必须保持 128x32 + mux31 才能点亮。
+ * 128x32 GDRAM 在 X/Y 两个方向折叠：物理像素 (p,q) 会同时收到 GDRAM 的
+ * (p,q)、(127-p,q)、(p,31-q)、(127-p,31-q)。所以之前无论做 180° 还是 Y-only
+ * 变换都会变成叠影/错乱，改 overlay 到 64x16 则会直接不显示。
  *
- * 现在直接按物理 64x16 维护一张 framebuffer，并让 LVGL 的 flush 回调
- * 无条件把这张帧整屏写出去。这样不再依赖 LVGL 的局部 area，也不再做
- * 任何软件旋转：文字位置就是实机位置。
+ * 现在直接维护 64x16 逻辑 framebuffer，用内置 5x7 字形画两行居中文字；
+ * 写屏前把逻辑帧向四个镜像位置各复制一份展开成 128x32 GDRAM，折叠后
+ * 正好还原原图。LVGL 只负责提供 screen 和触发刷新，不再参与绘制。
  */
 #if LV_COLOR_DEPTH == 1
 #define K30_OLED_WIDTH  64
 #define K30_OLED_HEIGHT 16
 #define K30_OLED_STRIDE K30_OLED_WIDTH
 
+#define K30_GDRAM_WIDTH  128
+#define K30_GDRAM_HEIGHT 32
+#define K30_GDRAM_STRIDE K30_GDRAM_WIDTH
+
 #define K30_GLYPH_W 5
 #define K30_GLYPH_H 7
 #define K30_CHAR_ADVANCE (K30_GLYPH_W + 1)
 
 static const struct device *k30_display_dev;
-static uint8_t k30_frame[K30_OLED_WIDTH * K30_OLED_HEIGHT / 8];
+static uint8_t k30_pixels[K30_OLED_WIDTH * K30_OLED_HEIGHT / 8];
+static uint8_t k30_gdram[K30_GDRAM_WIDTH * K30_GDRAM_HEIGHT / 8];
 static bool k30_flush_installed;
 static lv_obj_t *k30_status_screen;
 
@@ -156,7 +162,7 @@ static void k30_set_pixel(int32_t x, int32_t y, bool on)
         return;
     }
 
-    uint8_t *byte = &k30_frame[x + (y >> 3) * K30_OLED_STRIDE];
+    uint8_t *byte = &k30_pixels[x + (y >> 3) * K30_OLED_STRIDE];
     const uint8_t bit = (uint8_t)BIT(y & 7);
 
     if (on) {
@@ -202,25 +208,69 @@ static void k30_draw_centered(const char *text, int32_t y)
     }
 }
 
+static void k30_set_gdram(int32_t x, int32_t y, bool on)
+{
+    if (x < 0 || x >= K30_GDRAM_WIDTH || y < 0 || y >= K30_GDRAM_HEIGHT) {
+        return;
+    }
+
+    uint8_t *byte = &k30_gdram[x + (y >> 3) * K30_GDRAM_STRIDE];
+    const uint8_t bit = (uint8_t)BIT(y & 7);
+
+    if (on) {
+        *byte |= bit;
+    } else {
+        *byte &= (uint8_t)~bit;
+    }
+}
+
+/*
+ * 实机标定：物理像素 (p,q) 会同时收到 GDRAM 的
+ * (p,q)、(127-p,q)、(p,31-q)、(127-p,31-q) 四个位置。
+ * 因此把 64x16 逻辑帧向四个镜像位置各写一份，折叠后正好得到原图。
+ */
+static void k30_expand_gdram(void)
+{
+    memset(k30_gdram, 0, sizeof(k30_gdram));
+
+    for (int32_t y = 0; y < K30_OLED_HEIGHT; y++) {
+        for (int32_t x = 0; x < K30_OLED_WIDTH; x++) {
+            const uint8_t *src = &k30_pixels[x + (y >> 3) * K30_OLED_STRIDE];
+            const bool on = (*src & BIT(y & 7)) != 0U;
+
+            k30_set_gdram(x, y, on);
+            k30_set_gdram(K30_GDRAM_WIDTH - 1 - x, y, on);
+            k30_set_gdram(x, K30_GDRAM_HEIGHT - 1 - y, on);
+            k30_set_gdram(K30_GDRAM_WIDTH - 1 - x, K30_GDRAM_HEIGHT - 1 - y, on);
+        }
+    }
+}
+
+static void k30_write_gdram(void)
+{
+    if (k30_display_dev == NULL) {
+        return;
+    }
+
+    struct display_buffer_descriptor desc = {
+        .buf_size = sizeof(k30_gdram),
+        .width = K30_GDRAM_WIDTH,
+        .height = K30_GDRAM_HEIGHT,
+        .pitch = K30_GDRAM_STRIDE,
+    };
+
+    k_mutex_lock(&k30_frame_mutex, K_FOREVER);
+    (void)display_write(k30_display_dev, 0, 0, &desc, k30_gdram);
+    k_mutex_unlock(&k30_frame_mutex);
+}
+
 static void k30_frame_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
                                lv_color_t *color_p)
 {
     (void)area;
     (void)color_p;
 
-    if (k30_display_dev != NULL) {
-        struct display_buffer_descriptor desc = {
-            .buf_size = sizeof(k30_frame),
-            .width = K30_OLED_WIDTH,
-            .height = K30_OLED_HEIGHT,
-            .pitch = K30_OLED_STRIDE,
-        };
-
-        k_mutex_lock(&k30_frame_mutex, K_FOREVER);
-        (void)display_write(k30_display_dev, 0, 0, &desc, k30_frame);
-        k_mutex_unlock(&k30_frame_mutex);
-    }
-
+    k30_write_gdram();
     lv_disp_flush_ready(disp_drv);
 }
 
@@ -333,10 +383,14 @@ static void k30_render_status(void)
     }
 
     k_mutex_lock(&k30_frame_mutex, K_FOREVER);
-    memset(k30_frame, 0, sizeof(k30_frame));
+    memset(k30_pixels, 0, sizeof(k30_pixels));
     k30_draw_centered(top, 1);
     k30_draw_centered(layer, 9);
+    k30_expand_gdram();
     k_mutex_unlock(&k30_frame_mutex);
+
+    /* 直接写一次，确保即使 LVGL 没有触发刷新也能立刻显示。 */
+    k30_write_gdram();
 
     if (k30_status_screen != NULL) {
         lv_obj_invalidate(k30_status_screen);

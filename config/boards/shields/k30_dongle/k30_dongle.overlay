@@ -44,15 +44,17 @@
 		compatible = "solomon,ssd1306fb";
 		reg = <0x3c>;
 		/*
-		 * 实机标定：面板可见像素是 64x16。之前按 128x32 驱动时，
-		 * GDRAM 在 X/Y 两个方向折叠，导致文字左右叠影、上下重叠。
+		 * 这组参数是实机验证过能点亮的配置，不能改。
+		 * 面板可见区域实际只有 64x16，128x32 GDRAM 的折叠补偿
+		 * 在 status screen 的 flush 回调里做，不再动这里。
 		 */
-		width = <64>;
-		height = <16>;
+		width = <128>;
+		height = <32>;
 		segment-offset = <0>;
 		page-offset = <0>;
 		display-offset = <0>;
-		multiplex-ratio = <15>;
+		multiplex-ratio = <31>;
+		segment-remap;
 		com-invdir;
 		com-sequential;
 		prechargep = <0x22>;
