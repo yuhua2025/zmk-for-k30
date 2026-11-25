@@ -64,7 +64,9 @@ jobs:
           # The SSD1312 module only lights up with segment-remap/com-invdir, and
           # that combo renders the framebuffer upside down. Rotate in the mono
           # flush callback instead of fighting the panel's hardware mapping.
-          # Requires LV_Z_VDB_SIZE=100 below so the whole screen flushes at once.
+          # Do not turn on LV_Z_FULL_REFRESH: Zephyr's draw buffer is sized as
+          # VDB_SIZE*W*H/100/8 bytes, way too small for a full-screen render,
+          # and LVGL would write past it and hard-fault (black screen).
           python3 "$GITHUB_WORKSPACE/tools/patch_lvgl_mono_rotate.py" \
             zephyr/modules/lvgl/lvgl_display_mono.c
           grep -q "180 degree rotation patch" zephyr/modules/lvgl/lvgl_display_mono.c
@@ -73,7 +75,7 @@ jobs:
         working-directory: zmk
         run: |
           KCONF=app/boards/shields/k30_dongle/Kconfig.defconfig
-          printf '\nif SHIELD_K30_DONGLE\n\nif ZMK_DISPLAY\n\nconfig I2C\n\tdefault y\n\nconfig SSD1306\n\tdefault y\n\nconfig LV_USE_LABEL\n\tdefault y\n\nconfig LV_Z_MEM_POOL_SIZE\n\tdefault 8192\n\nendif # ZMK_DISPLAY\n\nif LVGL\n\nconfig LV_Z_VDB_SIZE\n\tdefault 100\n\nconfig LV_Z_FULL_REFRESH\n\tdefault y\n\nconfig LV_DPI_DEF\n\tdefault 148\n\nconfig LV_Z_BITS_PER_PIXEL\n\tdefault 1\n\nchoice LV_COLOR_DEPTH\n\tdefault LV_COLOR_DEPTH_1\nendchoice\n\nconfig LV_FONT_MONTSERRAT_12\n\tdefault y\n\nconfig LV_FONT_MONTSERRAT_16\n\tdefault y\n\nendif # LVGL\n\nendif # SHIELD_K30_DONGLE\n' >> "$KCONF"
+          printf '\nif SHIELD_K30_DONGLE\n\nif ZMK_DISPLAY\n\nconfig I2C\n\tdefault y\n\nconfig SSD1306\n\tdefault y\n\nconfig LV_USE_LABEL\n\tdefault y\n\nconfig LV_Z_MEM_POOL_SIZE\n\tdefault 8192\n\nendif # ZMK_DISPLAY\n\nif LVGL\n\nconfig LV_Z_VDB_SIZE\n\tdefault 64\n\nconfig LV_DPI_DEF\n\tdefault 148\n\nconfig LV_Z_BITS_PER_PIXEL\n\tdefault 1\n\nchoice LV_COLOR_DEPTH\n\tdefault LV_COLOR_DEPTH_1\nendchoice\n\nconfig LV_FONT_MONTSERRAT_12\n\tdefault y\n\nconfig LV_FONT_MONTSERRAT_16\n\tdefault y\n\nendif # LVGL\n\nendif # SHIELD_K30_DONGLE\n' >> "$KCONF"
           echo "=== Patched Kconfig.defconfig ==="
           cat "$KCONF"
 

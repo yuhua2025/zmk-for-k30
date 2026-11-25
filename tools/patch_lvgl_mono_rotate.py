@@ -7,9 +7,12 @@ framebuffer upside down. The other hardware combinations either also flip it
 or output nothing at all (verified on the real panel). Since the panel cannot
 be oriented in hardware, rotate the pixel block in the flush callback instead.
 
-The panel is 128x32 and LV_Z_VDB_SIZE is set to 100 so LVGL hands us the whole
-screen in one flush; the rotation is a straight per-pixel remap inside that
-single buffer.
+The panel is 128x32. Each flush covers a partial area (LVGL's renderer works in
+8-row-aligned chunks), and the rotation is a per-pixel remap *within that chunk*
+plus recomputing the destination origin, so partial refreshes stay correct.
+Do NOT enable LV_Z_FULL_REFRESH: Zephyr sizes its draw buffer as
+VDB_SIZE*W*H/100/8 bytes, far too small for a whole-screen render, and LVGL
+would write out of bounds and hard-fault (verified: black screen).
 """
 
 import sys
