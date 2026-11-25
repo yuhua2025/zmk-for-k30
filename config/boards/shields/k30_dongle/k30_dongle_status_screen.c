@@ -25,10 +25,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include <zmk/ble.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/battery_state_changed.h>
-#include <zmk/events/split_peripheral_status_changed.h>
-#include <zmk/split/bluetooth/peripheral.h>
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 #include <zmk/split/central.h>
 #endif
@@ -55,6 +54,10 @@ static void apply_battery_level(uint8_t level) {
 
 static void refresh_status(void) {
     char text[20];
+
+    /* Central side: BLE link state of the active (bonded keyboard) profile.
+     * zmk_split_bt_peripheral_is_connected() is peripheral-side only. */
+    peripheral_connected = zmk_ble_active_profile_is_connected();
 
     if (!peripheral_connected) {
         snprintf(text, sizeof(text), "BLE OFF");
@@ -97,21 +100,6 @@ static int battery_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(dongle_battery, battery_listener);
 ZMK_SUBSCRIPTION(dongle_battery, zmk_peripheral_battery_state_changed);
 
-static int peripheral_status_listener(const zmk_event_t *eh) {
-    const struct zmk_split_peripheral_status_changed *ev =
-        as_zmk_split_peripheral_status_changed(eh);
-
-    if (ev != NULL) {
-        peripheral_connected = ev->connected;
-        k_work_submit(&refresh_work);
-    }
-
-    return 0;
-}
-
-ZMK_LISTENER(dongle_peripheral_status, peripheral_status_listener);
-ZMK_SUBSCRIPTION(dongle_peripheral_status, zmk_split_peripheral_status_changed);
-
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
@@ -127,7 +115,7 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_text_color(status_label, lv_color_white(), 0);
 
     /* Initial state from current caches, then keep ticking */
-    peripheral_connected = zmk_split_bt_peripheral_is_connected();
+    peripheral_connected = zmk_ble_active_profile_is_connected();
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     uint8_t level = 0;
