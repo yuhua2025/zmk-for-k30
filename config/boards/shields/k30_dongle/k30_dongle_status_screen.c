@@ -13,7 +13,6 @@
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/events/activity_state_changed.h>
 #include <zmk/event_manager.h>
-#include <zmk/display.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
 #include <zmk/activity.h>
@@ -25,10 +24,12 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-/* 主行 "USB  BAT:85%"，副行图层名，均水平居中。
- * 1-bit 屏不能叠 1px 阴影做加粗（会糊成双影），只用单一 label。 */
-static lv_obj_t *top_label;
+static lv_obj_t *battery_label;
+static lv_obj_t *battery_label_b;  /* bold shadow */
+static lv_obj_t *output_label;
+static lv_obj_t *output_label_b;
 static lv_obj_t *layer_label;
+static lv_obj_t *layer_label_b;
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
@@ -57,7 +58,9 @@ static void apply_battery_level(uint8_t level) {
     have_battery = true;
 }
 
-static void get_battery_text(char *buf, size_t len) {
+static void update_battery(void) {
+    char text[16];
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     uint8_t level = 0;
     if (zmk_split_central_get_peripheral_battery_level(0, &level) == 0) {
@@ -66,35 +69,35 @@ static void get_battery_text(char *buf, size_t len) {
 #endif
 
     if (!battery_received_any) {
-        snprintf(buf, len, "BAT:--");
+        snprintf(text, sizeof(text), "BAT:--");
     } else if (!have_battery) {
-        snprintf(buf, len, "BAT:0?");
+        snprintf(text, sizeof(text), "BAT:0?");
     } else {
-        snprintf(buf, len, "BAT:%d%%", battery_level);
+        snprintf(text, sizeof(text), "BAT:%d%%", battery_level);
     }
+
+    lv_label_set_text(battery_label, text);
+    lv_label_set_text(battery_label_b, text);
 }
 
-static const char *get_output_text(void) {
+static void update_output(void) {
     struct zmk_endpoint_instance selected = zmk_endpoints_selected();
+    const char *text = "?";
 
     switch (selected.transport) {
     case ZMK_TRANSPORT_USB:
-        return "USB";
+        text = "USB";
+        break;
     case ZMK_TRANSPORT_BLE:
-        return "BLE";
+        text = "BLE";
+        break;
     default:
-        return "---";
+        text = "---";
+        break;
     }
-}
 
-static void update_top_line(void) {
-    char bat[12];
-    char text[24];
-
-    get_battery_text(bat, sizeof(bat));
-    snprintf(text, sizeof(text), "%s  %s", get_output_text(), bat);
-
-    lv_label_set_text(top_label, text);
+    lv_label_set_text(output_label, text);
+    lv_label_set_text(output_label_b, text);
 }
 
 static void update_layer(void) {
@@ -106,10 +109,12 @@ static void update_layer(void) {
     }
 
     lv_label_set_text(layer_label, name);
+    lv_label_set_text(layer_label_b, name);
 }
 
 static void refresh_work_handler(struct k_work *work) {
-    update_top_line();
+    update_battery();
+    update_output();
     update_layer();
 }
 
@@ -121,7 +126,7 @@ K_WORK_DEFINE(refresh_work, refresh_work_handler);
  * the display coming up). Ticking every 2s keeps the labels in sync with the
  * central's battery cache with negligible cost (one cache read + label text).
  */
-static void refresh_tick_cb(struct k_timer *_timer) { k_work_submit_to_queue(zmk_display_work_q(), &refresh_work); }
+static void refresh_tick_cb(struct k_timer *_timer) { k_work_submit(&refresh_work); }
 
 K_TIMER_DEFINE(refresh_timer, refresh_tick_cb, NULL);
 
@@ -132,7 +137,7 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
 
     if (ev != NULL) {
         apply_battery_level(ev->state_of_charge);
-        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+        k_work_submit(&refresh_work);
     }
 
     return 0;
@@ -143,7 +148,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 #endif
 
 static int layer_listener(const zmk_event_t *eh) {
-    k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+    k_work_submit(&refresh_work);
     return 0;
 }
 
@@ -151,7 +156,7 @@ ZMK_LISTENER(dongle_display_layer, layer_listener);
 ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
-    k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+    k_work_submit(&refresh_work);
     return 0;
 }
 
@@ -163,25 +168,13 @@ ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 static int activity_listener(const zmk_event_t *eh) {
     const struct zmk_activity_state_changed *ev = as_zmk_activity_state_changed(eh);
     if (ev != NULL && ev->state == ZMK_ACTIVITY_ACTIVE) {
-        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
+        k_work_submit(&refresh_work);
     }
     return 0;
 }
 
 ZMK_LISTENER(dongle_display_activity, activity_listener);
 ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
-
-/* 创建居中标签，黑底白字。128x32 屏放不下两行 16px（行高 18），
- * 主信息用 16px、图层名用 12px。 */
-static lv_obj_t *create_centered_label(lv_obj_t *screen, lv_align_t align, int32_t x, int32_t y,
-                                       const lv_font_t *font, const char *text) {
-    lv_obj_t *label = lv_label_create(screen);
-    lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_align(label, align, x, y);
-    lv_label_set_text(label, text);
-    return label;
-}
 
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
@@ -192,17 +185,46 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_style_pad_all(screen, 0, 0);
 
-    /* 主信息行（输出 + 电量）- 16px，水平居中，占屏幕上半部 */
-    top_label = create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -1, &lv_font_montserrat_16,
-                                      "---  BAT:--");
+    /* Output label - top left, 16px, bold via 1px offset shadow */
+    output_label = lv_label_create(screen);
+    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 2, 7);
+    lv_obj_set_style_text_font(output_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(output_label, lv_color_white(), 0);
+    lv_label_set_text(output_label, "---");
+    output_label_b = lv_label_create(screen);
+    lv_obj_align(output_label_b, LV_ALIGN_TOP_LEFT, 3, 7);
+    lv_obj_set_style_text_font(output_label_b, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(output_label_b, lv_color_white(), 0);
+    lv_label_set_text(output_label_b, "---");
 
-    /* 图层名 - 12px，水平居中，贴底 */
-    layer_label = create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, 1, &lv_font_montserrat_12,
-                                        "---");
+    /* Battery label - top right, 16px, bold via 1px offset shadow */
+    battery_label = lv_label_create(screen);
+    lv_obj_align(battery_label, LV_ALIGN_TOP_RIGHT, -2, 7);
+    lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(battery_label, lv_color_white(), 0);
+    lv_label_set_text(battery_label, "BAT:--");
+    battery_label_b = lv_label_create(screen);
+    lv_obj_align(battery_label_b, LV_ALIGN_TOP_RIGHT, -1, 7);
+    lv_obj_set_style_text_font(battery_label_b, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(battery_label_b, lv_color_white(), 0);
+    lv_label_set_text(battery_label_b, "BAT:--");
+
+    /* Layer label - bottom center, 16px, bold via 1px offset shadow */
+    layer_label = lv_label_create(screen);
+    lv_obj_align(layer_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_set_style_text_font(layer_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(layer_label, lv_color_white(), 0);
+    lv_label_set_text(layer_label, "---");
+    layer_label_b = lv_label_create(screen);
+    lv_obj_align(layer_label_b, LV_ALIGN_BOTTOM_MID, 1, -2);
+    lv_obj_set_style_text_font(layer_label_b, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(layer_label_b, lv_color_white(), 0);
+    lv_label_set_text(layer_label_b, "---");
 
     /* Initial update */
-    update_top_line();
+    update_output();
     update_layer();
+    update_battery();
 
     /* Start the periodic self-healing refresh */
     k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));

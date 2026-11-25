@@ -49,9 +49,6 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
-		/* 这块屏只有 remap+invdir 能出图（其它组合整屏黑），但它同时把画面
-		 * 翻成 180°。方向改由驱动层像素翻转修正：
-		 * tools/patch_lvgl_mono_rotate.py（CI 构建时给 LVGL mono flush 打补丁）。 */
 		segment-remap;
 		com-invdir;
 		com-sequential;

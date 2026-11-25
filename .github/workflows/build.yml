@@ -58,19 +58,6 @@ jobs:
           # 0% until the next real level change. tools/patch_battery_reporting.py
           # removes that change-check: the 60s battery timer then reports every tick.
           python3 "$GITHUB_WORKSPACE/tools/patch_battery_reporting.py" app/src/battery.c
-      - name: Patch LVGL mono flush - rotate panel 180 degrees
-        working-directory: zmk
-        run: |
-          # The SSD1312 module only lights up with segment-remap/com-invdir, and
-          # that combo renders the framebuffer upside down. Rotate in the mono
-          # flush callback instead of fighting the panel's hardware mapping.
-          # Do not turn on LV_Z_FULL_REFRESH: Zephyr's draw buffer is sized as
-          # VDB_SIZE*W*H/100/8 bytes, way too small for a full-screen render,
-          # and LVGL would write past it and hard-fault (black screen).
-          python3 "$GITHUB_WORKSPACE/tools/patch_lvgl_mono_rotate.py" \
-            zephyr/modules/lvgl/lvgl_display_mono.c
-          grep -q "180 degree rotation patch" zephyr/modules/lvgl/lvgl_display_mono.c
-          echo "mono rotate patch applied OK"
       - name: Patch Kconfig.defconfig for mono OLED display
         working-directory: zmk
         run: |
@@ -90,7 +77,7 @@ jobs:
         working-directory: zmk
         run: |
           CONF=app/boards/shields/k30_dongle/k30_dongle.conf
-          printf '\n# Display - custom status screen with peripheral battery\nCONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y\nCONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y\nCONFIG_LV_FONT_DEFAULT_MONTSERRAT_16=y\nCONFIG_MAIN_STACK_SIZE=2048\nCONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048\n' >> "$CONF"
+          printf '\n# Display - custom status screen with peripheral battery\nCONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y\nCONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y\nCONFIG_LV_FONT_DEFAULT_MONTSERRAT_16=y\nCONFIG_MAIN_STACK_SIZE=2048\nCONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048\nCONFIG_ZMK_DISPLAY_BLANK_ON_IDLE=y\nCONFIG_ZMK_IDLE_TIMEOUT=15000\n' >> "$CONF"
           echo "=== Patched conf ==="
           cat $CONF
 
