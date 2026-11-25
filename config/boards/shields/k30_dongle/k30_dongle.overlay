@@ -49,8 +49,7 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
-		segment-remap;
-		com-invdir;
+		/* 不开 segment-remap / com-invdir：相对旧配置整体旋转 180°，与 USB 口方向一致 */
 		com-sequential;
 		prechargep = <0x22>;
 	};

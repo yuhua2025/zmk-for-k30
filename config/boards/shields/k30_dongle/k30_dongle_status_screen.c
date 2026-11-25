@@ -203,12 +203,14 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_style_pad_all(screen, 0, 0);
 
-    /* Top line (output + battery) - horizontally centered, 16px; y 微调避免与下行重叠 */
-    create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -2, "---  BAT:--", &top_label,
+    /* Top line (output + battery) - horizontally centered, 16px。
+     * montserrat_16 行高 18px，32px 屏两行放不下完整行盒，按基线手工对位：
+     * 上行基线 y=11（大写/数字无降部），下行基线 y=28，中间留 3px 空隙 */
+    create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -4, "---  BAT:--", &top_label,
                           &top_label_b);
 
     /* Bottom line (layer name) - horizontally centered, 16px */
-    create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, -2, "---", &layer_label,
+    create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, -1, "---", &layer_label,
                           &layer_label_b);
 
     /* Initial update */
