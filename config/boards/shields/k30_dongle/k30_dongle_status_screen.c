@@ -25,12 +25,10 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-/* Top line: "<output>  <battery>", centered; bottom line: layer name, centered.
- * Bold look via a 1px offset duplicate label behind the main one. */
+/* 主行 "USB  BAT:85%"，副行图层名，均水平居中。
+ * 1-bit 屏不能叠 1px 阴影做加粗（会糊成双影），只用单一 label。 */
 static lv_obj_t *top_label;
-static lv_obj_t *top_label_b;  /* bold shadow */
 static lv_obj_t *layer_label;
-static lv_obj_t *layer_label_b;  /* bold shadow */
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
@@ -97,7 +95,6 @@ static void update_top_line(void) {
     snprintf(text, sizeof(text), "%s  %s", get_output_text(), bat);
 
     lv_label_set_text(top_label, text);
-    lv_label_set_text(top_label_b, text);
 }
 
 static void update_layer(void) {
@@ -109,7 +106,6 @@ static void update_layer(void) {
     }
 
     lv_label_set_text(layer_label, name);
-    lv_label_set_text(layer_label_b, name);
 }
 
 static void refresh_work_handler(struct k_work *work) {
@@ -175,25 +171,16 @@ static int activity_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(dongle_display_activity, activity_listener);
 ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
-/* 创建居中的加粗标签：1px 偏移阴影 + 主标签，黑底白字。
- * 128x32 屏放不下两行 16px（行高 18），主信息用 16px、图层名用 12px。 */
-static void create_centered_label(lv_obj_t *screen, lv_align_t align, int32_t x, int32_t y,
-                                  const lv_font_t *font, const char *text, lv_obj_t **label_out,
-                                  lv_obj_t **shadow_out) {
-    lv_obj_t *shadow = lv_label_create(screen);
-    lv_obj_set_style_text_font(shadow, font, 0);
-    lv_obj_set_style_text_color(shadow, lv_color_white(), 0);
-    lv_obj_align(shadow, align, x + 1, y + 1);
-    lv_label_set_text(shadow, text);
-
+/* 创建居中标签，黑底白字。128x32 屏放不下两行 16px（行高 18），
+ * 主信息用 16px、图层名用 12px。 */
+static lv_obj_t *create_centered_label(lv_obj_t *screen, lv_align_t align, int32_t x, int32_t y,
+                                       const lv_font_t *font, const char *text) {
     lv_obj_t *label = lv_label_create(screen);
     lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_align(label, align, x, y);
     lv_label_set_text(label, text);
-
-    *label_out = label;
-    *shadow_out = shadow;
+    return label;
 }
 
 lv_obj_t *zmk_display_status_screen(void) {
@@ -206,12 +193,12 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_pad_all(screen, 0, 0);
 
     /* 主信息行（输出 + 电量）- 16px，水平居中，占屏幕上半部 */
-    create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -1, &lv_font_montserrat_16, "---  BAT:--",
-                          &top_label, &top_label_b);
+    top_label = create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -1, &lv_font_montserrat_16,
+                                      "---  BAT:--");
 
     /* 图层名 - 12px，水平居中，贴底 */
-    create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, 1, &lv_font_montserrat_12, "---",
-                          &layer_label, &layer_label_b);
+    layer_label = create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, 1, &lv_font_montserrat_12,
+                                        "---");
 
     /* Initial update */
     update_top_line();
