@@ -88,6 +88,11 @@ static void k30_rotate_180_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *ar
     rotated_area.y1 = yres - 1 - area->y2;
     rotated_area.y2 = yres - 1 - area->y1;
 
+    /* 诊断：若本回调真的被调用，整屏反色为白底黑字。 */
+    for (size_t i = 0; i < sizeof(k30_rotate_buf); i++) {
+        k30_rotate_buf[i] = (uint8_t)~k30_rotate_buf[i];
+    }
+
     k30_flush_orig(disp_drv, &rotated_area, (lv_color_t *)k30_rotate_buf);
 }
 
