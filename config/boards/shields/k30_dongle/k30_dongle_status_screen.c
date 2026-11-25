@@ -33,84 +33,219 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
- * 这块 SSD1312 面板只有 segment-remap + com-invdir 能点亮。实机反色诊断确认
- * flush 回调确实被调用；180 度补偿后画面只剩左右镜像，说明面板实际映射是
- * 上下翻转。因此这里只做 Y 翻转：8 行块倒序，并把字节内 bit 号取反。
+ * 标定图结论：
+ * 面板实际可见像素是 64x16，但 SSD1306/SSD1312 GDRAM 按 128x32 写入时会
+ * 在 X 和 Y 两个方向折叠：物理像素 p/q 会同时收到 GDRAM 的 p 与 127-p、
+ * q 与 31-q。所以之前无论做 180° 还是 Y-only 变换，都会变成叠影/错乱。
+ *
+ * 现在直接按物理 64x16 维护一张 framebuffer，并让 LVGL 的 flush 回调
+ * 无条件把这张帧整屏写出去。这样不再依赖 LVGL 的局部 area，也不再做
+ * 任何软件旋转：文字位置就是实机位置。
  */
 #if LV_COLOR_DEPTH == 1
-#define K30_OLED_WIDTH  128
-#define K30_OLED_HEIGHT 32
+#define K30_OLED_WIDTH  64
+#define K30_OLED_HEIGHT 16
+#define K30_OLED_STRIDE K30_OLED_WIDTH
 
-static void (*k30_flush_orig)(lv_disp_drv_t *disp_drv, const lv_area_t *area,
-                              lv_color_t *color_p);
-static uint8_t k30_rotate_buf[K30_OLED_WIDTH * K30_OLED_HEIGHT / 8];
-static bool k30_msb_first;
+#define K30_GLYPH_W 5
+#define K30_GLYPH_H 7
+#define K30_CHAR_ADVANCE (K30_GLYPH_W + 1)
 
-static void k30_vertical_flip_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
-                                       lv_color_t *color_p)
+static const struct device *k30_display_dev;
+static uint8_t k30_frame[K30_OLED_WIDTH * K30_OLED_HEIGHT / 8];
+static bool k30_flush_installed;
+static lv_obj_t *k30_status_screen;
+
+K_MUTEX_DEFINE(k30_frame_mutex);
+
+static const uint8_t k30_glyph_space[K30_GLYPH_W] = {0x00, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t k30_glyph_dash[K30_GLYPH_W] = {0x00, 0x00, 0x0E, 0x00, 0x00};
+static const uint8_t k30_glyph_colon[K30_GLYPH_W] = {0x00, 0x0C, 0x0C, 0x00, 0x00};
+static const uint8_t k30_glyph_percent[K30_GLYPH_W] = {0x23, 0x13, 0x08, 0x64, 0x62};
+static const uint8_t k30_glyph_unknown[K30_GLYPH_W] = {0x3E, 0x51, 0x49, 0x45, 0x3E};
+
+static const uint8_t k30_glyph_0[K30_GLYPH_W] = {0x3E, 0x51, 0x49, 0x45, 0x3E};
+static const uint8_t k30_glyph_1[K30_GLYPH_W] = {0x00, 0x42, 0x7F, 0x40, 0x00};
+static const uint8_t k30_glyph_2[K30_GLYPH_W] = {0x42, 0x61, 0x51, 0x49, 0x46};
+static const uint8_t k30_glyph_3[K30_GLYPH_W] = {0x21, 0x41, 0x45, 0x4B, 0x31};
+static const uint8_t k30_glyph_4[K30_GLYPH_W] = {0x18, 0x14, 0x12, 0x7F, 0x10};
+static const uint8_t k30_glyph_5[K30_GLYPH_W] = {0x27, 0x45, 0x45, 0x45, 0x39};
+static const uint8_t k30_glyph_6[K30_GLYPH_W] = {0x3C, 0x4A, 0x49, 0x49, 0x30};
+static const uint8_t k30_glyph_7[K30_GLYPH_W] = {0x01, 0x71, 0x09, 0x05, 0x03};
+static const uint8_t k30_glyph_8[K30_GLYPH_W] = {0x36, 0x49, 0x49, 0x49, 0x36};
+static const uint8_t k30_glyph_9[K30_GLYPH_W] = {0x06, 0x49, 0x49, 0x29, 0x1E};
+
+static const uint8_t k30_glyph_A[K30_GLYPH_W] = {0x7E, 0x11, 0x11, 0x11, 0x7E};
+static const uint8_t k30_glyph_B[K30_GLYPH_W] = {0x7F, 0x49, 0x49, 0x49, 0x36};
+static const uint8_t k30_glyph_C[K30_GLYPH_W] = {0x3E, 0x41, 0x41, 0x41, 0x22};
+static const uint8_t k30_glyph_E[K30_GLYPH_W] = {0x7F, 0x49, 0x49, 0x49, 0x41};
+static const uint8_t k30_glyph_F[K30_GLYPH_W] = {0x7F, 0x09, 0x09, 0x09, 0x01};
+static const uint8_t k30_glyph_L[K30_GLYPH_W] = {0x40, 0x40, 0x40, 0x40, 0x7F};
+static const uint8_t k30_glyph_N[K30_GLYPH_W] = {0x7F, 0x20, 0x18, 0x04, 0x7F};
+static const uint8_t k30_glyph_S[K30_GLYPH_W] = {0x46, 0x49, 0x49, 0x49, 0x31};
+static const uint8_t k30_glyph_T[K30_GLYPH_W] = {0x01, 0x01, 0x7F, 0x01, 0x01};
+static const uint8_t k30_glyph_U[K30_GLYPH_W] = {0x7F, 0x40, 0x40, 0x40, 0x7F};
+
+static char k30_upper(char c)
 {
-    const int32_t w = lv_area_get_width(area);
-    const int32_t h = lv_area_get_height(area);
-    lv_disp_t *disp = lv_disp_get_default();
-    const int32_t yres = (disp != NULL) ? lv_disp_get_ver_res(disp) : K30_OLED_HEIGHT;
+    if (c >= 'a' && c <= 'z') {
+        return (char)(c - 'a' + 'A');
+    }
+    return c;
+}
 
-    if (k30_flush_orig == NULL || w <= 0 || h <= 0 ||
-        ((uint32_t)w * (uint32_t)h) > (sizeof(k30_rotate_buf) * 8U)) {
-        if (k30_flush_orig != NULL) {
-            k30_flush_orig(disp_drv, area, color_p);
-        }
+static const uint8_t *k30_glyph(char c)
+{
+    switch (k30_upper(c)) {
+    case ' ':
+        return k30_glyph_space;
+    case '-':
+        return k30_glyph_dash;
+    case ':':
+        return k30_glyph_colon;
+    case '%':
+        return k30_glyph_percent;
+    case '0':
+        return k30_glyph_0;
+    case '1':
+        return k30_glyph_1;
+    case '2':
+        return k30_glyph_2;
+    case '3':
+        return k30_glyph_3;
+    case '4':
+        return k30_glyph_4;
+    case '5':
+        return k30_glyph_5;
+    case '6':
+        return k30_glyph_6;
+    case '7':
+        return k30_glyph_7;
+    case '8':
+        return k30_glyph_8;
+    case '9':
+        return k30_glyph_9;
+    case 'A':
+        return k30_glyph_A;
+    case 'B':
+        return k30_glyph_B;
+    case 'C':
+        return k30_glyph_C;
+    case 'E':
+        return k30_glyph_E;
+    case 'F':
+        return k30_glyph_F;
+    case 'L':
+        return k30_glyph_L;
+    case 'N':
+        return k30_glyph_N;
+    case 'S':
+        return k30_glyph_S;
+    case 'T':
+        return k30_glyph_T;
+    case 'U':
+        return k30_glyph_U;
+    default:
+        return k30_glyph_unknown;
+    }
+}
+
+static void k30_set_pixel(int32_t x, int32_t y, bool on)
+{
+    if (x < 0 || x >= K30_OLED_WIDTH || y < 0 || y >= K30_OLED_HEIGHT) {
         return;
     }
 
-    const uint8_t *src = (const uint8_t *)color_p;
-    memset(k30_rotate_buf, 0, sizeof(k30_rotate_buf));
+    uint8_t *byte = &k30_frame[x + (y >> 3) * K30_OLED_STRIDE];
+    const uint8_t bit = (uint8_t)BIT(y & 7);
 
-    for (int32_t ry = 0; ry < h; ry++) {
-        for (int32_t rx = 0; rx < w; rx++) {
-            const int32_t sy = h - 1 - ry;
-            const uint8_t src_bit = k30_msb_first ? (uint8_t)(7 - (sy & 7)) : (uint8_t)(sy & 7);
-            const uint8_t dst_bit = (uint8_t)(7 - src_bit);
+    if (on) {
+        *byte |= bit;
+    } else {
+        *byte &= (uint8_t)~bit;
+    }
+}
 
-            if ((src[rx + ((sy >> 3) * w)] & (1U << src_bit)) != 0U) {
-                k30_rotate_buf[rx + ((ry >> 3) * w)] |= (1U << dst_bit);
+static void k30_draw_char(char c, int32_t x, int32_t y)
+{
+    const uint8_t *glyph = k30_glyph(c);
+
+    for (int32_t col = 0; col < K30_GLYPH_W; col++) {
+        for (int32_t row = 0; row < K30_GLYPH_H; row++) {
+            if ((glyph[col] & BIT(row)) != 0U) {
+                k30_set_pixel(x + col, y + row, true);
             }
         }
     }
-
-    lv_area_t flipped_area;
-    flipped_area.x1 = area->x1;
-    flipped_area.x2 = area->x2;
-    flipped_area.y1 = yres - 1 - area->y2;
-    flipped_area.y2 = yres - 1 - area->y1;
-
-    k30_flush_orig(disp_drv, &flipped_area, (lv_color_t *)k30_rotate_buf);
 }
 
-static void k30_install_rotation(void)
+static int32_t k30_text_width(const char *text)
 {
-    lv_disp_t *disp = lv_disp_get_default();
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
 
-    if (disp == NULL || disp->driver == NULL || disp->driver->flush_cb == NULL ||
-        k30_flush_orig != NULL) {
+    return (int32_t)strlen(text) * K30_CHAR_ADVANCE - 1;
+}
+
+static void k30_draw_centered(const char *text, int32_t y)
+{
+    const int32_t width = k30_text_width(text);
+    int32_t x = (K30_OLED_WIDTH - width) / 2;
+
+    if (x < 0) {
+        x = 0;
+    }
+
+    for (int32_t i = 0; text[i] != '\0'; i++) {
+        k30_draw_char(text[i], x + i * K30_CHAR_ADVANCE, y);
+    }
+}
+
+static void k30_frame_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area,
+                               lv_color_t *color_p)
+{
+    (void)area;
+    (void)color_p;
+
+    if (k30_display_dev != NULL) {
+        struct display_buffer_descriptor desc = {
+            .buf_size = sizeof(k30_frame),
+            .width = K30_OLED_WIDTH,
+            .height = K30_OLED_HEIGHT,
+            .pitch = K30_OLED_STRIDE,
+        };
+
+        k_mutex_lock(&k30_frame_mutex, K_FOREVER);
+        (void)display_write(k30_display_dev, 0, 0, &desc, k30_frame);
+        k_mutex_unlock(&k30_frame_mutex);
+    }
+
+    lv_disp_flush_ready(disp_drv);
+}
+
+static void k30_install_framebuffer(void)
+{
+    if (k30_flush_installed) {
         return;
     }
 
-    const struct device *display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
-    if (device_is_ready(display_dev)) {
-        struct display_capabilities caps;
-        display_get_capabilities(display_dev, &caps);
-        k30_msb_first = (caps.screen_info & SCREEN_INFO_MONO_MSB_FIRST) != 0;
+    lv_disp_t *disp = lv_disp_get_default();
+    if (disp == NULL || disp->driver == NULL) {
+        return;
     }
 
-    k30_flush_orig = disp->driver->flush_cb;
-    disp->driver->flush_cb = k30_vertical_flip_flush_cb;
+    k30_display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+    if (!device_is_ready(k30_display_dev)) {
+        return;
+    }
+
+    disp->driver->flush_cb = k30_frame_flush_cb;
+    k30_flush_installed = true;
 }
 #else
-static void k30_install_rotation(void) {}
+static void k30_install_framebuffer(void) {}
 #endif /* LV_COLOR_DEPTH == 1 */
-
-static lv_obj_t *top_label;
-static lv_obj_t *layer_label;
 
 static uint8_t battery_level = 0;
 static bool have_battery = false;
@@ -119,8 +254,6 @@ static bool battery_received_any = false;
 /*
  * ZMK 在外设断开时会把 central 电量缓存清零，并注入一个假的 0% 事件。
  * 真实电量不会是 0%，因此忽略 0 值，继续显示最后一次有效电量。
- *   "BAT:--" 从未收到任何电量数据
- *   "BAT:0?" 收到过数据但只有 0
  */
 static void apply_battery_level(uint8_t level)
 {
@@ -152,6 +285,22 @@ static void get_battery_text(char *buf, size_t len)
     }
 }
 
+static void get_battery_short(char *buf, size_t len)
+{
+    char full[12];
+
+    get_battery_text(full, sizeof(full));
+
+    const char *value = strstr(full, "BAT:");
+    if (value != NULL) {
+        value += 4;
+    } else {
+        value = full;
+    }
+
+    snprintf(buf, len, "%s", value);
+}
+
 static const char *get_output_text(void)
 {
     struct zmk_endpoint_instance selected = zmk_endpoints_selected();
@@ -166,34 +315,41 @@ static const char *get_output_text(void)
     }
 }
 
-/* 128x32 单行放 16px：最长的 "USB BAT:100%" 约 117px，可以居中放下。 */
-static void update_top_line(void)
+#if LV_COLOR_DEPTH == 1
+static void k30_render_status(void)
 {
-    char bat[12];
-    char text[24];
+    char bat[8];
+    char top[12];
+    char layer[8];
 
-    get_battery_text(bat, sizeof(bat));
-    snprintf(text, sizeof(text), "%s %s", get_output_text(), bat);
-    lv_label_set_text(top_label, text);
-}
+    get_battery_short(bat, sizeof(bat));
+    snprintf(top, sizeof(top), "%s %s", get_output_text(), bat);
 
-static void update_layer(void)
-{
-    char text[16];
     const char *name = zmk_keymap_layer_name(zmk_keymap_highest_layer_active());
-
     if (name == NULL || name[0] == '\0') {
-        snprintf(text, sizeof(text), "L%d", zmk_keymap_highest_layer_active());
-        name = text;
+        snprintf(layer, sizeof(layer), "L%d", zmk_keymap_highest_layer_active());
+    } else {
+        snprintf(layer, sizeof(layer), "%s", name);
     }
 
-    lv_label_set_text(layer_label, name);
+    k_mutex_lock(&k30_frame_mutex, K_FOREVER);
+    memset(k30_frame, 0, sizeof(k30_frame));
+    k30_draw_centered(top, 1);
+    k30_draw_centered(layer, 9);
+    k_mutex_unlock(&k30_frame_mutex);
+
+    if (k30_status_screen != NULL) {
+        lv_obj_invalidate(k30_status_screen);
+    }
 }
+#else
+static void k30_render_status(void) {}
+#endif /* LV_COLOR_DEPTH == 1 */
 
 static void refresh_work_handler(struct k_work *work)
 {
-    update_top_line();
-    update_layer();
+    (void)work;
+    k30_render_status();
 }
 
 K_WORK_DEFINE(refresh_work, refresh_work_handler);
@@ -201,6 +357,7 @@ K_WORK_DEFINE(refresh_work, refresh_work_handler);
 /* 每 2 秒自愈刷新一次，避免事件和屏幕初始化竞争导致显示不同步。 */
 static void refresh_tick_cb(struct k_timer *_timer)
 {
+    (void)_timer;
     k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
 }
 
@@ -226,6 +383,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 
 static int layer_listener(const zmk_event_t *eh)
 {
+    (void)eh;
     k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     return 0;
 }
@@ -235,6 +393,7 @@ ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh)
 {
+    (void)eh;
     k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     return 0;
 }
@@ -257,62 +416,20 @@ static int activity_listener(const zmk_event_t *eh)
 ZMK_LISTENER(dongle_display_activity, activity_listener);
 ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
-static lv_obj_t *create_centered_label(lv_obj_t *screen, const lv_font_t *font, lv_align_t align,
-                                       int32_t y, const char *text)
-{
-    lv_obj_t *label = lv_label_create(screen);
-    lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(label, LV_OPA_TRANSP, 0);
-    lv_obj_align(label, align, 0, y);
-    lv_label_set_text(label, text);
-    return label;
-}
-
-/*
- * 方向标定屏：不加载任何软件变换，也不用文字，只用几何标记。
- * LVGL 坐标 (128x32)：
- *   左上 1 根竖条 / 右上 2 根 / 左下 3 根 / 右下 4 根
- *   中部 y=15 一条水平线；中心一个 4x4 方块
- * 拍照后数每个物理角上的竖条数量，即可确定面板的镜像/翻转/旋转关系。
- */
-static void k30_add_bar(lv_obj_t *screen, int32_t x, int32_t y, int32_t w, int32_t h)
-{
-    lv_obj_t *bar = lv_obj_create(screen);
-    lv_obj_set_size(bar, w, h);
-    lv_obj_set_pos(bar, x, y);
-    lv_obj_set_style_bg_color(bar, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_set_style_outline_width(bar, 0, 0);
-    lv_obj_set_style_radius(bar, 0, 0);
-    lv_obj_set_style_pad_all(bar, 0, 0);
-}
-
-static void k30_add_corner_marks(lv_obj_t *screen, int32_t x, int32_t y, int32_t count)
-{
-    for (int32_t i = 0; i < count; i++) {
-        k30_add_bar(screen, x + i * 5, y, 3, 8);
-    }
-}
-
 lv_obj_t *zmk_display_status_screen(void)
 {
-    /* 标定时故意不安装旋转包壳，先看原始硬件映射。 */
-    lv_obj_t *screen = lv_obj_create(NULL);
+    k30_install_framebuffer();
 
-    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(screen, 0, 0);
-    lv_obj_set_style_pad_all(screen, 0, 0);
+    k30_status_screen = lv_obj_create(NULL);
 
-    k30_add_corner_marks(screen, 2, 2, 1);     /* LVGL 左上 */
-    k30_add_corner_marks(screen, 118, 2, 2);   /* LVGL 右上 */
-    k30_add_corner_marks(screen, 2, 22, 3);    /* LVGL 左下 */
-    k30_add_corner_marks(screen, 108, 22, 4);  /* LVGL 右下 */
+    lv_obj_set_style_bg_color(k30_status_screen, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(k30_status_screen, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(k30_status_screen, 0, 0);
+    lv_obj_set_style_pad_all(k30_status_screen, 0, 0);
 
-    k30_add_bar(screen, 20, 15, 88, 2);        /* 中部水平线 */
-    k30_add_bar(screen, 62, 14, 4, 4);         /* 中心方块 */
+    k30_render_status();
 
-    return screen;
+    k_timer_start(&refresh_timer, K_SECONDS(2), K_SECONDS(2));
+
+    return k30_status_screen;
 }

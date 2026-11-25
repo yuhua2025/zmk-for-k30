@@ -43,13 +43,16 @@
 	oled: ssd1306@3c {
 		compatible = "solomon,ssd1306fb";
 		reg = <0x3c>;
-		width = <128>;
-		height = <32>;
+		/*
+		 * 实机标定：面板可见像素是 64x16。之前按 128x32 驱动时，
+		 * GDRAM 在 X/Y 两个方向折叠，导致文字左右叠影、上下重叠。
+		 */
+		width = <64>;
+		height = <16>;
 		segment-offset = <0>;
 		page-offset = <0>;
 		display-offset = <0>;
-		multiplex-ratio = <31>;
-		segment-remap;
+		multiplex-ratio = <15>;
 		com-invdir;
 		com-sequential;
 		prechargep = <0x22>;
