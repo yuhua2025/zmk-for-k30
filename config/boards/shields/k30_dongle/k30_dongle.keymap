@@ -8,6 +8,7 @@
         compatible = "zmk,keymap";
 
         default_layer {
+            display-name = "Base";
             bindings = <
                 &kp LG(C)   &kp LG(V)    &kp LG(X)     &kp BSPC
                 &mo 1       &kp KP_SLASH    &kp KP_ASTERISK  &kp KP_MINUS
@@ -19,6 +20,7 @@
         };
 
         fn_layer {
+            display-name = "Fn";
             bindings = <
                 &trans        &trans          &trans         &trans
                 &trans        &trans          &trans         &kp K_VOLUME_DOWN
