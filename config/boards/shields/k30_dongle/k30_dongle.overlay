@@ -49,7 +49,10 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
-		/* 不开 segment-remap / com-invdir：相对旧配置整体旋转 180°，与 USB 口方向一致 */
+		/* 这组参数是唯一能正常出图的组合：缺 segment-remap 会整屏黑，
+		 * 缺 com-invdir 会上下颠倒。方向由这两个属性决定，不要单独删。 */
+		segment-remap;
+		com-invdir;
 		com-sequential;
 		prechargep = <0x22>;
 	};

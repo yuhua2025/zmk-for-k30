@@ -13,6 +13,7 @@
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/events/activity_state_changed.h>
 #include <zmk/event_manager.h>
+#include <zmk/display.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
 #include <zmk/activity.h>
@@ -124,7 +125,7 @@ K_WORK_DEFINE(refresh_work, refresh_work_handler);
  * the display coming up). Ticking every 2s keeps the labels in sync with the
  * central's battery cache with negligible cost (one cache read + label text).
  */
-static void refresh_tick_cb(struct k_timer *_timer) { k_work_submit(&refresh_work); }
+static void refresh_tick_cb(struct k_timer *_timer) { k_work_submit_to_queue(zmk_display_work_q(), &refresh_work); }
 
 K_TIMER_DEFINE(refresh_timer, refresh_tick_cb, NULL);
 
@@ -135,7 +136,7 @@ static int peripheral_battery_listener(const zmk_event_t *eh) {
 
     if (ev != NULL) {
         apply_battery_level(ev->state_of_charge);
-        k_work_submit(&refresh_work);
+        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     }
 
     return 0;
@@ -146,7 +147,7 @@ ZMK_SUBSCRIPTION(peripheral_battery, zmk_peripheral_battery_state_changed);
 #endif
 
 static int layer_listener(const zmk_event_t *eh) {
-    k_work_submit(&refresh_work);
+    k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     return 0;
 }
 
@@ -154,7 +155,7 @@ ZMK_LISTENER(dongle_display_layer, layer_listener);
 ZMK_SUBSCRIPTION(dongle_display_layer, zmk_layer_state_changed);
 
 static int endpoint_listener(const zmk_event_t *eh) {
-    k_work_submit(&refresh_work);
+    k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     return 0;
 }
 
@@ -166,7 +167,7 @@ ZMK_SUBSCRIPTION(dongle_display_endpoint, zmk_usb_conn_state_changed);
 static int activity_listener(const zmk_event_t *eh) {
     const struct zmk_activity_state_changed *ev = as_zmk_activity_state_changed(eh);
     if (ev != NULL && ev->state == ZMK_ACTIVITY_ACTIVE) {
-        k_work_submit(&refresh_work);
+        k_work_submit_to_queue(zmk_display_work_q(), &refresh_work);
     }
     return 0;
 }
@@ -175,17 +176,18 @@ ZMK_LISTENER(dongle_display_activity, activity_listener);
 ZMK_SUBSCRIPTION(dongle_display_activity, zmk_activity_state_changed);
 
 /* 创建居中的加粗标签：1px 偏移阴影 + 主标签，黑底白字。
- * shadow/label 输出主标签与阴影标签指针，后续刷新文本时两份都要更新。 */
+ * 128x32 屏放不下两行 16px（行高 18），主信息用 16px、图层名用 12px。 */
 static void create_centered_label(lv_obj_t *screen, lv_align_t align, int32_t x, int32_t y,
-                                  const char *text, lv_obj_t **label_out, lv_obj_t **shadow_out) {
+                                  const lv_font_t *font, const char *text, lv_obj_t **label_out,
+                                  lv_obj_t **shadow_out) {
     lv_obj_t *shadow = lv_label_create(screen);
-    lv_obj_set_style_text_font(shadow, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(shadow, font, 0);
     lv_obj_set_style_text_color(shadow, lv_color_white(), 0);
     lv_obj_align(shadow, align, x + 1, y + 1);
     lv_label_set_text(shadow, text);
 
     lv_obj_t *label = lv_label_create(screen);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_align(label, align, x, y);
     lv_label_set_text(label, text);
@@ -203,15 +205,13 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_style_pad_all(screen, 0, 0);
 
-    /* Top line (output + battery) - horizontally centered, 16px。
-     * montserrat_16 行高 18px，32px 屏两行放不下完整行盒，按基线手工对位：
-     * 上行基线 y=11（大写/数字无降部），下行基线 y=28，中间留 3px 空隙 */
-    create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -4, "---  BAT:--", &top_label,
-                          &top_label_b);
+    /* 主信息行（输出 + 电量）- 16px，水平居中，占屏幕上半部 */
+    create_centered_label(screen, LV_ALIGN_TOP_MID, 0, -1, &lv_font_montserrat_16, "---  BAT:--",
+                          &top_label, &top_label_b);
 
-    /* Bottom line (layer name) - horizontally centered, 16px */
-    create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, -1, "---", &layer_label,
-                          &layer_label_b);
+    /* 图层名 - 12px，水平居中，贴底 */
+    create_centered_label(screen, LV_ALIGN_BOTTOM_MID, 0, 1, &lv_font_montserrat_12, "---",
+                          &layer_label, &layer_label_b);
 
     /* Initial update */
     update_top_line();
