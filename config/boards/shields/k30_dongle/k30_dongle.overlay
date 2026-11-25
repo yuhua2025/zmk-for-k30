@@ -49,11 +49,10 @@
 		page-offset = <0>;
 		display-offset = <0>;
 		multiplex-ratio = <31>;
-		/* 这组参数是唯一能正常出图的组合：缺 segment-remap 会整屏黑，
-		 * 缺 com-invdir 会上下颠倒。方向由这两个属性决定，不要单独删。 */
-		segment-remap;
-		com-invdir;
-		com-sequential;
+		/* 方向：不加 segment-remap / com-invdir = 不翻转，画面正向。
+		 * COM 引脚用 alternative(0x12)：不加 com-sequential。
+		 * 注意：这块屏在 normal 扫描 + sequential(0x02) 下整屏黑，
+		 * 所以 com-sequential 必须保持关闭。 */
 		prechargep = <0x22>;
 	};
 };
